@@ -91,6 +91,10 @@ def _refresh_python_paths() -> None:
 
 
 def _import_argos_modules_with_refresh():
+    for module_name in ["argostranslate", "argostranslate.translate", "argostranslate.package", "ctranslate2"]:
+        if module_name in sys.modules:
+            sys.modules.pop(module_name, None)
+
     modules = _import_argos_modules()
     if modules[0] is not None and modules[1] is not None:
         return modules
@@ -135,6 +139,14 @@ def _is_pair_installed(argos_translate, source_language: str, target_language: s
     return False
 
 
+def _is_runtime_translation_ok(argos_translate, source_language: str, target_language: str) -> bool:
+    try:
+        probe = argos_translate.translate("hello", source_language, target_language)
+        return bool((probe or "").strip())
+    except Exception:
+        return False
+
+
 def _install_argostranslate_dependency(
     *,
     force_reinstall: bool = False,
@@ -147,8 +159,10 @@ def _install_argostranslate_dependency(
     if clean_target and VENDOR_PATH.exists():
         try:
             shutil.rmtree(VENDOR_PATH)
-        except Exception as error:
-            return False, f"Cannot clean vendor path: {error}"
+        except Exception:
+            # When Anki is running, compiled DLLs can be locked. Continue with a
+            # force reinstall instead of failing hard on cleanup.
+            pass
 
     VENDOR_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -213,12 +227,17 @@ def ensure_translation_ready(
     auto_install_dependency: bool,
     auto_install_language_pack: bool,
     require_language_pair: bool = True,
+    force_retry: bool = False,
 ) -> tuple[bool, str]:
     global _last_error_time, _last_error_message
 
     with _setup_lock:
         now = time.time()
-        if _last_error_message and now - _last_error_time < _SETUP_COOLDOWN_SECONDS:
+        if (
+            not force_retry
+            and _last_error_message
+            and now - _last_error_time < _SETUP_COOLDOWN_SECONDS
+        ):
             return False, _last_error_message
 
         argos_translate, argos_package = _import_argos_modules()
@@ -239,7 +258,7 @@ def ensure_translation_ready(
             if argos_translate is None or argos_package is None:
                 repair_ok, repair_message = _install_argostranslate_dependency(
                     force_reinstall=True,
-                    clean_target=True,
+                    clean_target=False,
                 )
                 if repair_ok:
                     argos_translate, argos_package = _import_argos_modules_with_refresh()
@@ -306,6 +325,7 @@ def get_resource_status(source_language: str, target_language: str) -> dict[str,
         argos_translate, argos_package = _import_argos_modules_with_refresh()
     dependency_installed = argos_translate is not None and argos_package is not None
     language_pack_installed = False
+    runtime_translation_ok = False
 
     if dependency_installed:
         try:
@@ -314,10 +334,18 @@ def get_resource_status(source_language: str, target_language: str) -> dict[str,
                 source_language,
                 target_language,
             )
+            if language_pack_installed:
+                runtime_translation_ok = _is_runtime_translation_ok(
+                    argos_translate,
+                    source_language,
+                    target_language,
+                )
         except Exception:
             language_pack_installed = False
+            runtime_translation_ok = False
 
     return {
         "argostranslate": dependency_installed,
         "language_pack": language_pack_installed,
+        "argos_runtime_ok": runtime_translation_ok,
     }

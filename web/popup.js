@@ -32,6 +32,8 @@
     resources: {
       argostranslate: false,
       language_pack: false,
+      argos_runtime_ok: false,
+      status_unknown: true,
     },
   };
 
@@ -671,17 +673,13 @@
   }
 
   function updateSettingsState(data) {
-    const incomingSettings = data.settings || {};
     const incomingLanguages = data.languages || {};
     const incomingResources = data.resources || {};
 
-    toolSettings.enable_lookup = Boolean(
-      incomingSettings.enable_lookup !== false
-    );
-    toolSettings.enable_translate = Boolean(
-      incomingSettings.enable_translate !== false
-    );
-    toolSettings.enable_audio = Boolean(incomingSettings.enable_audio !== false);
+    // Tool toggles are intentionally fixed on; settings modal no longer exposes them.
+    toolSettings.enable_lookup = true;
+    toolSettings.enable_translate = true;
+    toolSettings.enable_audio = true;
 
     settingsState.languages = {
       source_language: String(incomingLanguages.source_language || "en"),
@@ -691,13 +689,21 @@
     settingsState.resources = {
       argostranslate: Boolean(incomingResources.argostranslate),
       language_pack: Boolean(incomingResources.language_pack),
+      argos_runtime_ok: Boolean(incomingResources.argos_runtime_ok),
+      status_unknown: Boolean(incomingResources.status_unknown),
     };
 
-    if (settingsState.resources.argostranslate) {
+    if (settingsState.resources.argostranslate && settingsState.resources.argos_runtime_ok) {
       resourceProgress.argostranslate = {
         progress: 100,
         status: "success",
         message: "Da san sang",
+      };
+    } else if (settingsState.resources.argostranslate && !settingsState.resources.argos_runtime_ok) {
+      resourceProgress.argostranslate = {
+        progress: 0,
+        status: "error",
+        message: "Da cai nhung khong khoi tao duoc",
       };
     }
 
@@ -810,7 +816,20 @@
   }
 
   function resourceStatusText(resourceId) {
+    if (settingsState.resources.status_unknown) {
+      return "Khong ro";
+    }
+
     const installed = Boolean(settingsState.resources[resourceId]);
+    const runtimeBroken =
+      resourceId === "argostranslate" &&
+      installed &&
+      !Boolean(settingsState.resources.argos_runtime_ok);
+
+    if (runtimeBroken) {
+      return "Loi runtime";
+    }
+
     if (installed) {
       return "Da cai";
     }
@@ -829,6 +848,19 @@
 
   function resourceButtonText(resourceId) {
     const installed = Boolean(settingsState.resources[resourceId]);
+    const runtimeBroken =
+      resourceId === "argostranslate" &&
+      installed &&
+      !Boolean(settingsState.resources.argos_runtime_ok);
+
+    if (runtimeBroken) {
+      return "Tai lai";
+    }
+
+    if (settingsState.resources.status_unknown) {
+      return "Tai";
+    }
+
     if (installed) {
       return "Da cai";
     }
@@ -843,6 +875,15 @@
 
   function resourceButtonDisabled(resourceId) {
     const installed = Boolean(settingsState.resources[resourceId]);
+    const runtimeBroken =
+      resourceId === "argostranslate" &&
+      installed &&
+      !Boolean(settingsState.resources.argos_runtime_ok);
+
+    if (runtimeBroken) {
+      return false;
+    }
+
     if (installed) {
       return true;
     }
@@ -934,34 +975,12 @@
       '<button class="apl-close apl-settings-close" type="button" aria-label="Close">x</button>' +
       "</div>" +
       '<div class="apl-settings-section">' +
-      '<div class="apl-settings-section-title">Bat/tat cong cu</div>' +
-      '<label class="apl-settings-toggle">' +
-      '<input type="checkbox" data-setting="enable_lookup"' +
-      (toolSettings.enable_lookup ? " checked" : "") +
-      ">" +
-      '<span>Tra tu don</span>' +
-      "</label>" +
-      '<label class="apl-settings-toggle">' +
-      '<input type="checkbox" data-setting="enable_translate"' +
-      (toolSettings.enable_translate ? " checked" : "") +
-      ">" +
-      '<span>Dich doan van</span>' +
-      "</label>" +
-      '<label class="apl-settings-toggle">' +
-      '<input type="checkbox" data-setting="enable_audio"' +
-      (toolSettings.enable_audio ? " checked" : "") +
-      ">" +
-      '<span>Audio</span>' +
-      "</label>" +
-      "</div>" +
-      '<div class="apl-settings-section">' +
       '<div class="apl-settings-section-title">Tai tai nguyen</div>' +
       resourcesHtml +
       "</div>" +
       errorHtml +
       '<div class="apl-settings-actions">' +
       '<button class="apl-button apl-settings-refresh" type="button">Refresh</button>' +
-      '<button class="apl-button apl-settings-save" type="button">Luu</button>' +
       "</div>" +
       "</div>" +
       "</div>";
@@ -973,7 +992,6 @@
   function bindSettingsActions() {
     const overlay = settingsModalEl.querySelector(".apl-settings-overlay");
     const closeButton = settingsModalEl.querySelector(".apl-settings-close");
-    const saveButton = settingsModalEl.querySelector(".apl-settings-save");
     const refreshButton = settingsModalEl.querySelector(".apl-settings-refresh");
 
     if (overlay) {
@@ -990,28 +1008,11 @@
       });
     }
 
-    if (saveButton) {
-      saveButton.addEventListener("click", function () {
-        saveSettings();
-      });
-    }
-
     if (refreshButton) {
       refreshButton.addEventListener("click", function () {
         requestSettings(true);
       });
     }
-
-    const toggles = settingsModalEl.querySelectorAll("input[data-setting]");
-    toggles.forEach(function (toggle) {
-      toggle.addEventListener("change", function () {
-        const key = toggle.getAttribute("data-setting");
-        if (!key) {
-          return;
-        }
-        toolSettings[key] = Boolean(toggle.checked);
-      });
-    });
 
     const downloadButtons = settingsModalEl.querySelectorAll(".apl-settings-download");
     downloadButtons.forEach(function (button) {

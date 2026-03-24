@@ -40,6 +40,8 @@ _resource_status_lock = threading.Lock()
 _resource_status_cache = {
     "argostranslate": False,
     "language_pack": False,
+    "argos_runtime_ok": False,
+    "status_unknown": True,
 }
 _resource_status_cache_time = 0.0
 _resource_status_refreshing = False
@@ -151,6 +153,8 @@ def _get_cached_resource_status() -> dict[str, bool]:
         return {
             "argostranslate": bool(_resource_status_cache.get("argostranslate", False)),
             "language_pack": bool(_resource_status_cache.get("language_pack", False)),
+            "argos_runtime_ok": bool(_resource_status_cache.get("argos_runtime_ok", False)),
+            "status_unknown": bool(_resource_status_cache.get("status_unknown", True)),
         }
 
 
@@ -188,6 +192,13 @@ def _refresh_resource_status_async(context: object, force: bool = False) -> None
                     _resource_status_cache["language_pack"] = bool(
                         status.get("language_pack", False)
                     )
+                    _resource_status_cache["argos_runtime_ok"] = bool(
+                        status.get("argos_runtime_ok", False)
+                    )
+                    _resource_status_cache["status_unknown"] = False
+                    _resource_status_cache_time = time.time()
+                else:
+                    _resource_status_cache["status_unknown"] = True
                     _resource_status_cache_time = time.time()
                 _resource_status_refreshing = False
 
@@ -260,6 +271,7 @@ def _run_resource_download(resource_id: str, context: object) -> None:
                     auto_install_dependency=True,
                     auto_install_language_pack=False,
                     require_language_pair=False,
+                    force_retry=True,
                 )
 
             ok, message = _run_with_progress_heartbeat(
@@ -288,6 +300,7 @@ def _run_resource_download(resource_id: str, context: object) -> None:
                     target_language=target_language,
                     auto_install_dependency=True,
                     auto_install_language_pack=True,
+                    force_retry=True,
                 )
 
             ok, message = _run_with_progress_heartbeat(

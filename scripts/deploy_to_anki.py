@@ -44,6 +44,17 @@ def _remove_path_if_exists(path: Path) -> bool:
     return True
 
 
+def _try_remove_tree(path: Path) -> tuple[bool, str]:
+    if not path.exists():
+        return True, ""
+
+    try:
+        shutil.rmtree(path)
+        return True, ""
+    except Exception as error:
+        return False, str(error)
+
+
 def _argostranslate_state_paths() -> list[Path]:
     candidates: list[Path] = []
 
@@ -94,21 +105,39 @@ def _addon_folder_name(source_root: Path) -> str:
 def main() -> None:
     source_root = _workspace_root()
     target_root = _addons21_dir() / _addon_folder_name(source_root)
+    deploy_mode = "fresh"
+    lock_warnings: list[str] = []
 
     if target_root.exists():
         vendor_path = target_root / "_vendor"
         if vendor_path.exists():
-            shutil.rmtree(vendor_path)
-        shutil.rmtree(target_root)
+            ok, message = _try_remove_tree(vendor_path)
+            if not ok:
+                deploy_mode = "in-place"
+                lock_warnings.append(f"Cannot remove _vendor: {message}")
+
+        if deploy_mode == "fresh":
+            ok, message = _try_remove_tree(target_root)
+            if not ok:
+                deploy_mode = "in-place"
+                lock_warnings.append(f"Cannot remove addon folder: {message}")
 
     removed_argos_paths: list[Path] = []
     for path in _argostranslate_state_paths():
         if _remove_path_if_exists(path):
             removed_argos_paths.append(path)
 
-    shutil.copytree(source_root, target_root, ignore=_ignore_filter)
+    if deploy_mode == "fresh":
+        shutil.copytree(source_root, target_root, ignore=_ignore_filter)
+    else:
+        shutil.copytree(source_root, target_root, ignore=_ignore_filter, dirs_exist_ok=True)
 
     print(f"Deployed add-on to: {target_root}")
+    print(f"Deploy mode: {deploy_mode}")
+    if lock_warnings:
+        print("Lock warnings:")
+        for warning in lock_warnings:
+            print(f"- {warning}")
     if removed_argos_paths:
         print("Removed Argos state:")
         for path in removed_argos_paths:

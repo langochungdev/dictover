@@ -23,9 +23,15 @@ DEFAULT_SETUP_CONFIG: dict[str, bool] = {
 }
 
 _SETUP_COOLDOWN_SECONDS = 30
+_PIP_INSTALL_TIMEOUT_SECONDS = 180
+_LANGUAGE_PACK_TIMEOUT_SECONDS = 300
 _setup_lock = threading.Lock()
 _last_error_time = 0.0
 _last_error_message = ""
+
+
+def is_setup_running() -> bool:
+    return _setup_lock.locked()
 
 
 def load_setup_config() -> dict[str, bool]:
@@ -181,13 +187,21 @@ def _install_argostranslate_dependency(
         "argostranslate",
     ])
 
-    process = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    try:
+        process = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=_PIP_INSTALL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            False,
+            "Het thoi gian cai ArgosTranslate. Vui long thu lai.",
+        )
+
     if process.returncode == 0:
         return True, ""
 
@@ -196,29 +210,47 @@ def _install_argostranslate_dependency(
 
 
 def _install_language_pack(argos_package, source_language: str, target_language: str) -> tuple[bool, str]:
-    try:
-        argos_package.update_package_index()
-        available = argos_package.get_available_packages()
-    except Exception as error:
-        return False, f"Cannot update Argos index: {error}"
+    result: dict[str, object] = {"ok": False, "message": "Unknown error"}
 
-    package = next(
-        (
-            pkg
-            for pkg in available
-            if pkg.from_code == source_language and pkg.to_code == target_language
-        ),
-        None,
-    )
-    if package is None:
-        return False, f"Cannot find Argos package {source_language}->{target_language}"
+    def _worker() -> None:
+        try:
+            argos_package.update_package_index()
+            available = argos_package.get_available_packages()
+        except Exception as error:
+            result["ok"] = False
+            result["message"] = f"Cannot update Argos index: {error}"
+            return
 
-    try:
-        package_path = package.download()
-        argos_package.install_from_path(package_path)
-        return True, ""
-    except Exception as error:
-        return False, f"Cannot install Argos package {source_language}->{target_language}: {error}"
+        package = next(
+            (
+                pkg
+                for pkg in available
+                if pkg.from_code == source_language and pkg.to_code == target_language
+            ),
+            None,
+        )
+        if package is None:
+            result["ok"] = False
+            result["message"] = f"Cannot find Argos package {source_language}->{target_language}"
+            return
+
+        try:
+            package_path = package.download()
+            argos_package.install_from_path(package_path)
+            result["ok"] = True
+            result["message"] = ""
+        except Exception as error:
+            result["ok"] = False
+            result["message"] = f"Cannot install Argos package {source_language}->{target_language}: {error}"
+
+    thread = threading.Thread(target=_worker, name="apl-install-langpack", daemon=True)
+    thread.start()
+    thread.join(_LANGUAGE_PACK_TIMEOUT_SECONDS)
+
+    if thread.is_alive():
+        return False, "Het thoi gian tai/cai language pack. Vui long thu lai."
+
+    return bool(result.get("ok", False)), str(result.get("message", ""))
 
 
 def ensure_translation_ready(
@@ -228,10 +260,22 @@ def ensure_translation_ready(
     auto_install_language_pack: bool,
     require_language_pair: bool = True,
     force_retry: bool = False,
+    lock_timeout_seconds: float | None = None,
 ) -> tuple[bool, str]:
     global _last_error_time, _last_error_message
 
-    with _setup_lock:
+    if lock_timeout_seconds is None:
+        acquired = _setup_lock.acquire(blocking=True)
+    else:
+        acquired = _setup_lock.acquire(timeout=max(0.0, float(lock_timeout_seconds)))
+
+    if not acquired:
+        return (
+            False,
+            "Dang co tien trinh cai dat Argos khac dang chay. Vui long doi xong roi bam Tai lai.",
+        )
+
+    try:
         now = time.time()
         if (
             not force_retry
@@ -302,6 +346,8 @@ def ensure_translation_ready(
         _last_error_message = ""
         _last_error_time = 0.0
         return True, ""
+    finally:
+        _setup_lock.release()
 
 
 def bootstrap_from_config(source_language: str, target_language: str) -> tuple[bool, str]:

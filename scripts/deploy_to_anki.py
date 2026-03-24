@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import json
 import shutil
+import subprocess
+import time
 from pathlib import Path
 
 
@@ -33,17 +35,6 @@ def _ignore_filter(_dir: str, names: list[str]) -> set[str]:
     return {name for name in names if name in ignored or name.endswith(".pyc")}
 
 
-def _remove_path_if_exists(path: Path) -> bool:
-    if not path.exists():
-        return False
-
-    if path.is_dir():
-        shutil.rmtree(path)
-    else:
-        path.unlink()
-    return True
-
-
 def _try_remove_tree(path: Path) -> tuple[bool, str]:
     if not path.exists():
         return True, ""
@@ -53,37 +44,6 @@ def _try_remove_tree(path: Path) -> tuple[bool, str]:
         return True, ""
     except Exception as error:
         return False, str(error)
-
-
-def _argostranslate_state_paths() -> list[Path]:
-    candidates: list[Path] = []
-
-    local_appdata = os.getenv("LOCALAPPDATA")
-    if local_appdata:
-        candidates.append(Path(local_appdata) / "argos-translate")
-
-    appdata = os.getenv("APPDATA")
-    if appdata:
-        candidates.append(Path(appdata) / "argos-translate")
-
-    user_profile = os.getenv("USERPROFILE")
-    if user_profile:
-        candidates.append(Path(user_profile) / ".local" / "share" / "argos-translate")
-
-    home = os.getenv("HOME")
-    if home:
-        candidates.append(Path(home) / ".local" / "share" / "argos-translate")
-
-    unique: list[Path] = []
-    seen: set[str] = set()
-    for path in candidates:
-        normalized = str(path.resolve()) if path.exists() else str(path)
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        unique.append(path)
-
-    return unique
 
 
 def _addon_folder_name(source_root: Path) -> str:
@@ -102,15 +62,115 @@ def _addon_folder_name(source_root: Path) -> str:
     return source_root.name
 
 
+def _is_anki_running() -> bool:
+    # tasklist is available on Windows and is a reliable way to detect
+    # whether Anki keeps native DLLs locked in the addon directory.
+    try:
+        process = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq anki.exe"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return False
+
+    output = (process.stdout or "").lower()
+    return "anki.exe" in output
+
+
+def _close_anki_if_running() -> tuple[bool, str]:
+    if not _is_anki_running():
+        return True, ""
+
+    try:
+        process = subprocess.run(
+            ["taskkill", "/F", "/T", "/IM", "anki.exe"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as error:
+        return False, f"Cannot stop Anki process: {error}"
+
+    # Wait briefly for Windows to fully release file locks.
+    for _ in range(20):
+        if not _is_anki_running():
+            return True, ""
+        time.sleep(0.25)
+
+    output = (process.stderr or process.stdout or "").strip()
+    return False, output or "Anki process is still running after taskkill"
+
+
+def _find_anki_executable() -> Path | None:
+    candidates: list[Path] = []
+
+    local_appdata = os.getenv("LOCALAPPDATA")
+    if local_appdata:
+        candidates.append(Path(local_appdata) / "Programs" / "Anki" / "anki.exe")
+
+    program_files = os.getenv("ProgramFiles")
+    if program_files:
+        candidates.append(Path(program_files) / "Anki" / "anki.exe")
+
+    program_files_x86 = os.getenv("ProgramFiles(x86)")
+    if program_files_x86:
+        candidates.append(Path(program_files_x86) / "Anki" / "anki.exe")
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    try:
+        process = subprocess.run(
+            ["where", "anki.exe"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if process.returncode == 0:
+            first_line = (process.stdout or "").splitlines()[0].strip()
+            if first_line:
+                discovered = Path(first_line)
+                if discovered.exists():
+                    return discovered
+    except Exception:
+        pass
+
+    return None
+
+
+def _launch_anki() -> tuple[bool, str]:
+    executable = _find_anki_executable()
+    if executable is None:
+        return False, "Cannot find anki.exe"
+
+    try:
+        subprocess.Popen(
+            [str(executable)],
+            cwd=str(executable.parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True, str(executable)
+    except Exception as error:
+        return False, f"Cannot launch Anki: {error}"
+
+
 def main() -> None:
     source_root = _workspace_root()
     target_root = _addons21_dir() / _addon_folder_name(source_root)
     deploy_mode = "fresh"
     lock_warnings: list[str] = []
+    anki_was_running = _is_anki_running()
+    closed_ok, close_error = _close_anki_if_running()
+    if not closed_ok:
+        raise RuntimeError(close_error)
 
     if target_root.exists():
         vendor_path = target_root / "_vendor"
-        if vendor_path.exists():
+        if deploy_mode == "fresh" and vendor_path.exists():
             ok, message = _try_remove_tree(vendor_path)
             if not ok:
                 deploy_mode = "in-place"
@@ -122,11 +182,6 @@ def main() -> None:
                 deploy_mode = "in-place"
                 lock_warnings.append(f"Cannot remove addon folder: {message}")
 
-    removed_argos_paths: list[Path] = []
-    for path in _argostranslate_state_paths():
-        if _remove_path_if_exists(path):
-            removed_argos_paths.append(path)
-
     if deploy_mode == "fresh":
         shutil.copytree(source_root, target_root, ignore=_ignore_filter)
     else:
@@ -134,17 +189,20 @@ def main() -> None:
 
     print(f"Deployed add-on to: {target_root}")
     print(f"Deploy mode: {deploy_mode}")
+    if anki_was_running:
+        print("Anki process: closed automatically before deploy")
     if lock_warnings:
         print("Lock warnings:")
         for warning in lock_warnings:
             print(f"- {warning}")
-    if removed_argos_paths:
-        print("Removed Argos state:")
-        for path in removed_argos_paths:
-            print(f"- {path}")
+
+    launched_ok, launch_info = _launch_anki()
+    if launched_ok:
+        print(f"Anki relaunched: {launch_info}")
     else:
-        print("Removed Argos state: none found")
-    print("Done. Close Anki completely, then open it again to load latest version.")
+        print(f"Anki relaunch skipped: {launch_info}")
+
+    print("Done.")
 
 
 if __name__ == "__main__":

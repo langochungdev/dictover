@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-import importlib
 import json
 from urllib.parse import quote
 from urllib.request import urlopen
-
-
-def _load_argos_translate_module():
-    try:
-        return importlib.import_module("argostranslate.translate")
-    except Exception:
-        return None
-
 
 def _translate_online(text: str, source_language: str, target_language: str) -> str:
     query = quote(text)
@@ -46,15 +37,5 @@ def _translate_online(text: str, source_language: str, target_language: str) -> 
 def translate_text(text: str, source_language: str = "en", target_language: str = "vi") -> str:
     if not (text or "").strip():
         raise ValueError("Missing text")
-
-    argos_translate = _load_argos_translate_module()
-    if argos_translate is not None:
-        try:
-            translated = argos_translate.translate(text, source_language, target_language)
-            translated_text = (translated or "").strip()
-            if translated_text:
-                return translated_text
-        except Exception:
-            pass
 
     return _translate_online(text, source_language, target_language)

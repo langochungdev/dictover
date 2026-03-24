@@ -15,6 +15,7 @@
   let settingsModalWarm = false;
   let settingsRequestPending = false;
   let settingsLastRequestedAt = 0;
+  let settingsProgressTickerId = null;
   let subPanelEl = null;
   let lastLookupDetails = null;
   let lastAnchor = { x: 24, y: 24 };
@@ -30,20 +31,22 @@
   const settingsState = {
     languages: { source_language: "en", target_language: "vi" },
     resources: {
-      argostranslate: false,
-      language_pack: false,
-      argos_runtime_ok: false,
-      status_unknown: true,
+      mode: "api_only",
+      status_unknown: false,
     },
   };
 
   const resourceProgress = {
-    argostranslate: { progress: 0, status: "idle", message: "" },
-    language_pack: { progress: 0, status: "idle", message: "" },
+    argostranslate: { progress: 0, status: "idle", message: "", startedAt: 0, startedPerf: 0 },
+    language_pack: { progress: 0, status: "idle", message: "", startedAt: 0, startedPerf: 0 },
   };
 
   let settingsMessage = "";
   const SETTINGS_REQUEST_COOLDOWN_MS = 3000;
+  const RESOURCE_TIMEOUT_SECONDS = {
+    argostranslate: 75,
+    language_pack: 300,
+  };
   const detailsToggleLabels = {
     closed: "Xem them",
     open: "An",
@@ -151,6 +154,112 @@
       return;
     }
     settingsModalEl.classList.add("apl-settings-root--hidden");
+    stopSettingsProgressTicker();
+  }
+
+  function stopSettingsProgressTicker() {
+    if (settingsProgressTickerId !== null) {
+      window.clearInterval(settingsProgressTickerId);
+      settingsProgressTickerId = null;
+    }
+  }
+
+  function hasActiveResourceDownload() {
+    return ["argostranslate", "language_pack"].some(function (resourceId) {
+      expireStalledDownload(resourceId);
+      const progress = resourceProgress[resourceId] || {};
+      return progress.status === "downloading";
+    });
+  }
+
+  function ensureSettingsProgressTicker() {
+    if (!hasActiveResourceDownload()) {
+      stopSettingsProgressTicker();
+      return;
+    }
+
+    if (!settingsModalEl || settingsModalEl.classList.contains("apl-settings-root--hidden")) {
+      stopSettingsProgressTicker();
+      return;
+    }
+
+    if (settingsProgressTickerId !== null) {
+      return;
+    }
+
+    settingsProgressTickerId = window.setInterval(function () {
+      if (!settingsModalEl || settingsModalEl.classList.contains("apl-settings-root--hidden")) {
+        stopSettingsProgressTicker();
+        return;
+      }
+      if (!hasActiveResourceDownload()) {
+        stopSettingsProgressTicker();
+        return;
+      }
+      renderSettingsModal();
+    }, 1000);
+  }
+
+  function stripElapsedSuffix(message) {
+    return String(message || "").replace(/\s*\(\d+s\)\s*$/, "").trim();
+  }
+
+  function formatProgressMessage(progress) {
+    const base = stripElapsedSuffix(progress && progress.message ? progress.message : "");
+    if (!base) {
+      return "";
+    }
+
+    if (!progress || progress.status !== "downloading") {
+      return base;
+    }
+
+    const startedAt = Number(progress && progress.startedAt ? progress.startedAt : 0);
+    const startedPerf = Number(progress && progress.startedPerf ? progress.startedPerf : 0);
+    if (!startedAt && !startedPerf) {
+      return base;
+    }
+
+    let elapsedSeconds = 0;
+    if (startedPerf && typeof performance !== "undefined" && typeof performance.now === "function") {
+      elapsedSeconds = Math.max(0, Math.floor((performance.now() - startedPerf) / 1000));
+    } else {
+      elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    }
+    return base + " (" + elapsedSeconds + "s)";
+  }
+
+  function expireStalledDownload(resourceId) {
+    const progress = resourceProgress[resourceId] || {};
+    if (progress.status !== "downloading") {
+      return false;
+    }
+
+    const startedAt = Number(progress.startedAt || 0);
+    if (!startedAt) {
+      return false;
+    }
+
+    const timeoutSeconds = Number(RESOURCE_TIMEOUT_SECONDS[resourceId] || 120);
+    const startedPerf = Number(progress.startedPerf || 0);
+    let elapsedSeconds = 0;
+    if (startedPerf && typeof performance !== "undefined" && typeof performance.now === "function") {
+      elapsedSeconds = Math.max(0, Math.floor((performance.now() - startedPerf) / 1000));
+    } else {
+      elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    }
+    if (elapsedSeconds <= timeoutSeconds) {
+      return false;
+    }
+
+    resourceProgress[resourceId] = {
+      progress: 0,
+      status: "error",
+      message: "Qua thoi gian cho. Bam Tai lai.",
+      startedAt: startedAt,
+      startedPerf: startedPerf,
+    };
+    return true;
   }
 
   function ensureDebugPanel() {
@@ -634,10 +743,33 @@
 
     if (data.type === "settings_resource_progress") {
       const resourceId = data.resource || "";
+      const previous = resourceProgress[resourceId] || {};
+      const nextStatus = String(data.status || "idle");
+      const incomingStartedAt = Number(data.started_at_ms || 0);
+      const startedAt =
+        nextStatus === "downloading"
+          ? Number(
+              incomingStartedAt ||
+                (previous.status === "downloading" && previous.startedAt ? previous.startedAt : Date.now())
+            )
+          : 0;
+      const startedPerf =
+        nextStatus === "downloading"
+          ? Number(
+              previous.status === "downloading" && previous.startedPerf
+                ? previous.startedPerf
+                : typeof performance !== "undefined" && typeof performance.now === "function"
+                  ? performance.now()
+                  : 0
+            )
+          : 0;
+
       resourceProgress[resourceId] = {
         progress: Number(data.progress || 0),
-        status: String(data.status || "idle"),
+        status: nextStatus,
         message: String(data.message || ""),
+        startedAt: startedAt,
+        startedPerf: startedPerf,
       };
       renderSettingsModal();
       return;
@@ -674,7 +806,6 @@
 
   function updateSettingsState(data) {
     const incomingLanguages = data.languages || {};
-    const incomingResources = data.resources || {};
 
     // Tool toggles are intentionally fixed on; settings modal no longer exposes them.
     toolSettings.enable_lookup = true;
@@ -687,33 +818,9 @@
     };
 
     settingsState.resources = {
-      argostranslate: Boolean(incomingResources.argostranslate),
-      language_pack: Boolean(incomingResources.language_pack),
-      argos_runtime_ok: Boolean(incomingResources.argos_runtime_ok),
-      status_unknown: Boolean(incomingResources.status_unknown),
+      mode: "api_only",
+      status_unknown: false,
     };
-
-    if (settingsState.resources.argostranslate && settingsState.resources.argos_runtime_ok) {
-      resourceProgress.argostranslate = {
-        progress: 100,
-        status: "success",
-        message: "Da san sang",
-      };
-    } else if (settingsState.resources.argostranslate && !settingsState.resources.argos_runtime_ok) {
-      resourceProgress.argostranslate = {
-        progress: 0,
-        status: "error",
-        message: "Da cai nhung khong khoi tao duoc",
-      };
-    }
-
-    if (settingsState.resources.language_pack) {
-      resourceProgress.language_pack = {
-        progress: 100,
-        status: "success",
-        message: "Da san sang",
-      };
-    }
 
     renderSettingsModal();
   }
@@ -752,6 +859,8 @@
       progress: 5,
       status: "downloading",
       message: "Dang bat dau...",
+      startedAt: Date.now(),
+      startedPerf: typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : 0,
     };
     settingsMessage = "";
     renderSettingsModal();
@@ -912,57 +1021,18 @@
       return;
     }
 
-    const resourceIds = ["argostranslate", "language_pack"];
-
-    const resourcesHtml = resourceIds
-      .map(function (resourceId) {
-        const progress = resourceProgress[resourceId] || {
-          progress: 0,
-          status: "idle",
-          message: "",
-        };
-        const status = resourceStatusText(resourceId);
-        const label = resourceLabel(resourceId);
-        const buttonText = resourceButtonText(resourceId);
-        const disabled = resourceButtonDisabled(resourceId) ? " disabled" : "";
-        const progressValue = resourceProgressValue(resourceId);
-        const progressMessage = escapeHtml(progress.message || "");
-
-        return (
-          '<div class="apl-settings-resource" data-resource="' +
-          resourceId +
-          '">' +
-          '<div class="apl-settings-resource-top">' +
-          '<div class="apl-settings-resource-name">' +
-          escapeHtml(label) +
-          "</div>" +
-          '<div class="apl-settings-resource-status">' +
-          escapeHtml(status) +
-          "</div>" +
-          "</div>" +
-          '<div class="apl-settings-progress">' +
-          '<div class="apl-settings-progress-value" style="width:' +
-          String(progressValue) +
-          '%"></div>' +
-          "</div>" +
-          '<div class="apl-settings-resource-message">' +
-          progressMessage +
-          "</div>" +
-          '<button class="apl-button apl-settings-download" type="button" data-resource="' +
-          resourceId +
-          '"' +
-          disabled +
-          ">" +
-          escapeHtml(buttonText) +
-          "</button>" +
-          "</div>"
-        );
-      })
-      .join("");
-
     const errorHtml = settingsMessage
       ? '<div class="apl-settings-error">' + escapeHtml(settingsMessage) + "</div>"
       : "";
+
+    const modeHtml =
+      '<div class="apl-settings-resource">' +
+      '<div class="apl-settings-resource-top">' +
+      '<div class="apl-settings-resource-name">Che do dich</div>' +
+      '<div class="apl-settings-resource-status">API online</div>' +
+      "</div>" +
+      '<div class="apl-settings-resource-message">Khong can cai ArgosTranslate hoac language pack offline.</div>' +
+      "</div>";
 
     settingsModalEl.innerHTML =
       '<div class="apl-settings-overlay" role="dialog" aria-modal="true" aria-labelledby="apl-settings-title">' +
@@ -975,8 +1045,8 @@
       '<button class="apl-close apl-settings-close" type="button" aria-label="Close">x</button>' +
       "</div>" +
       '<div class="apl-settings-section">' +
-      '<div class="apl-settings-section-title">Tai tai nguyen</div>' +
-      resourcesHtml +
+      '<div class="apl-settings-section-title">Translation</div>' +
+      modeHtml +
       "</div>" +
       errorHtml +
       '<div class="apl-settings-actions">' +
@@ -987,6 +1057,7 @@
 
     bindSettingsActions();
     settingsModalWarm = true;
+    ensureSettingsProgressTicker();
   }
 
   function bindSettingsActions() {
@@ -1014,16 +1085,6 @@
       });
     }
 
-    const downloadButtons = settingsModalEl.querySelectorAll(".apl-settings-download");
-    downloadButtons.forEach(function (button) {
-      button.addEventListener("click", function () {
-        const resourceId = button.getAttribute("data-resource");
-        if (!resourceId) {
-          return;
-        }
-        startResourceDownload(resourceId);
-      });
-    });
   }
 
   function openSettingsModal() {

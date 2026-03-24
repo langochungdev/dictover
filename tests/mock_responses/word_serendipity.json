@@ -1,0 +1,23 @@
+[
+  {
+    "word": "serendipity",
+    "phonetic": "/ˌser.ənˈdɪp.ɪ.ti/",
+    "phonetics": [
+      {
+        "text": "/ˌser.ənˈdɪp.ɪ.ti/",
+        "audio": "https://example.com/serendipity.mp3"
+      }
+    ],
+    "meanings": [
+      {
+        "partOfSpeech": "noun",
+        "definitions": [
+          {
+            "definition": "The occurrence of happy events by chance.",
+            "example": "A happy serendipity brought them together."
+          }
+        ]
+      }
+    ]
+  }
+]

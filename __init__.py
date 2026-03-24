@@ -12,6 +12,9 @@ from aqt import gui_hooks, mw
 ADDON_PACKAGE = "anki_popup_lookup"
 ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
+ASSET_VERSION = "20260324e"
+ASSET_CSS_PATH = f"/_addons/{ADDON_PACKAGE}/web/popup.css?v={ASSET_VERSION}"
+ASSET_JS_PATH = f"/_addons/{ADDON_PACKAGE}/web/popup.js?v={ASSET_VERSION}"
 
 if str(ADDON_DIR) not in sys.path:
     sys.path.insert(0, str(ADDON_DIR))
@@ -305,11 +308,8 @@ def _send_to_webview(context: object, payload: dict) -> None:
 
 
 def on_card_show(html: str, card, context) -> str:
-    asset_version = "20260324d"
-    css_tag = (
-        f"<link rel='stylesheet' href='/_addons/{ADDON_PACKAGE}/web/popup.css?v={asset_version}'>"
-    )
-    js_tag = f"<script src='/_addons/{ADDON_PACKAGE}/web/popup.js?v={asset_version}'></script>"
+    css_tag = f"<link rel='stylesheet' href='{ASSET_CSS_PATH}'>"
+    js_tag = f"<script src='{ASSET_JS_PATH}'></script>"
 
     output = html
     if css_tag not in output:
@@ -318,6 +318,16 @@ def on_card_show(html: str, card, context) -> str:
         output += js_tag
 
     return output
+
+
+def on_webview_will_set_content(web_content, context) -> None:
+    css_list = getattr(web_content, "css", None)
+    if isinstance(css_list, list) and ASSET_CSS_PATH not in css_list:
+        css_list.append(ASSET_CSS_PATH)
+
+    js_list = getattr(web_content, "js", None)
+    if isinstance(js_list, list) and ASSET_JS_PATH not in js_list:
+        js_list.append(ASSET_JS_PATH)
 
 
 def on_js_message(handled, message: str, context):
@@ -401,5 +411,6 @@ def on_js_message(handled, message: str, context):
 
 
 gui_hooks.card_will_show.append(on_card_show)
+gui_hooks.webview_will_set_content.append(on_webview_will_set_content)
 gui_hooks.webview_did_receive_js_message.append(on_js_message)
 _start_auto_setup_if_needed()

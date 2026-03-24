@@ -1,9 +1,20 @@
 (function () {
+  if (window.__aplPopupToolsInitialized) {
+    if (typeof window.aplEnsureSettingsTrigger === "function") {
+      window.aplEnsureSettingsTrigger();
+    }
+    return;
+  }
+  window.__aplPopupToolsInitialized = true;
+
   let popoverEl = null;
   let debugPanelEl = null;
   let debugLogEl = null;
   let settingsTriggerEl = null;
   let settingsModalEl = null;
+  let settingsModalWarm = false;
+  let settingsRequestPending = false;
+  let settingsLastRequestedAt = 0;
   let subPanelEl = null;
   let lastLookupDetails = null;
   let lastAnchor = { x: 24, y: 24 };
@@ -30,6 +41,7 @@
   };
 
   let settingsMessage = "";
+  const SETTINGS_REQUEST_COOLDOWN_MS = 3000;
 
   function now() {
     return new Date().toLocaleTimeString();
@@ -109,8 +121,7 @@
     if (!settingsModalEl) {
       return;
     }
-    settingsModalEl.remove();
-    settingsModalEl = null;
+    settingsModalEl.classList.add("apl-settings-root--hidden");
   }
 
   function ensureDebugPanel() {
@@ -450,6 +461,7 @@
     }
 
     if (data.type === "settings_state") {
+      settingsRequestPending = false;
       updateSettingsState(data);
       return;
     }
@@ -532,7 +544,20 @@
     renderSettingsModal();
   }
 
-  function requestSettings() {
+  function requestSettings(force) {
+    const nowTs = Date.now();
+
+    if (!force) {
+      if (settingsRequestPending) {
+        return;
+      }
+      if (nowTs - settingsLastRequestedAt < SETTINGS_REQUEST_COOLDOWN_MS) {
+        return;
+      }
+    }
+
+    settingsRequestPending = true;
+    settingsLastRequestedAt = nowTs;
     sendPycmd("settings:get");
   }
 
@@ -560,11 +585,17 @@
   }
 
   function ensureSettingsTrigger() {
-    if (settingsTriggerEl) {
+    const existing = document.querySelectorAll(".apl-settings-trigger");
+    if (existing.length > 0) {
+      settingsTriggerEl = existing[0];
+      for (let i = 1; i < existing.length; i += 1) {
+        existing[i].remove();
+      }
       return;
     }
 
     const trigger = document.createElement("button");
+    trigger.id = "apl-settings-trigger";
     trigger.className = "apl-settings-trigger";
     trigger.type = "button";
     trigger.textContent = "Tools!";
@@ -753,6 +784,7 @@
       "</div>";
 
     bindSettingsActions();
+    settingsModalWarm = true;
   }
 
   function bindSettingsActions() {
@@ -783,7 +815,7 @@
 
     if (refreshButton) {
       refreshButton.addEventListener("click", function () {
-        requestSettings();
+        requestSettings(true);
       });
     }
 
@@ -813,12 +845,16 @@
   function openSettingsModal() {
     if (!settingsModalEl) {
       settingsModalEl = document.createElement("div");
-      settingsModalEl.className = "apl-settings-root";
+      settingsModalEl.className = "apl-settings-root apl-settings-root--hidden";
       document.body.appendChild(settingsModalEl);
     }
 
-    renderSettingsModal();
-    requestSettings();
+    if (!settingsModalWarm) {
+      renderSettingsModal();
+    }
+
+    settingsModalEl.classList.remove("apl-settings-root--hidden");
+    requestSettings(false);
   }
 
   document.addEventListener("mouseup", function (event) {
@@ -911,11 +947,27 @@
   window.addEventListener("resize", refreshPopoverPosition);
 
   ensureSettingsTrigger();
-  requestSettings();
+  requestSettings(false);
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(function () {
+      if (!settingsModalEl) {
+        settingsModalEl = document.createElement("div");
+        settingsModalEl.className = "apl-settings-root apl-settings-root--hidden";
+        document.body.appendChild(settingsModalEl);
+      }
+
+      if (!settingsModalWarm) {
+        renderSettingsModal();
+      }
+    });
+  }
+
   pushDebug("popup.js da duoc load.");
 
   window.showPopover = showPopover;
   window.updatePopover = updatePopover;
+  window.aplEnsureSettingsTrigger = ensureSettingsTrigger;
   window.aplDebugDump = function () {
     return debugLines.join("\n");
   };

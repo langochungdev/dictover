@@ -4,6 +4,8 @@ import json
 import importlib
 import sys
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -32,7 +34,56 @@ DEFAULT_RUNTIME_SETTINGS = {
     "enable_audio": True,
 }
 
+_MESSAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="apl-worker")
+_RESOURCE_STATUS_TTL_SECONDS = 120.0
+_resource_status_lock = threading.Lock()
+_resource_status_cache = {
+    "argostranslate": False,
+    "language_pack": False,
+}
+_resource_status_cache_time = 0.0
+_resource_status_refreshing = False
+
 _resource_download_lock = threading.Lock()
+
+
+def _run_with_progress_heartbeat(
+    resource_id: str,
+    context: object,
+    initial_progress: int,
+    max_progress: int,
+    message: str,
+    task,
+):
+    done_event = threading.Event()
+
+    def _heartbeat() -> None:
+        current = max(0, min(initial_progress, max_progress))
+        while not done_event.wait(2.0):
+            if current < max_progress:
+                current += 2
+            _send_to_webview(
+                context,
+                {
+                    "type": "settings_resource_progress",
+                    "resource": resource_id,
+                    "progress": current,
+                    "status": "downloading",
+                    "message": message,
+                },
+            )
+
+    heartbeat_thread = threading.Thread(
+        target=_heartbeat,
+        name=f"apl-progress-{resource_id}",
+        daemon=True,
+    )
+    heartbeat_thread.start()
+
+    try:
+        return task()
+    finally:
+        done_event.set()
 
 
 def _get_runtime_config() -> dict:
@@ -80,25 +131,12 @@ def _save_runtime_settings(partial_settings: dict[str, bool]) -> dict[str, bool]
     return merged
 
 
-def _build_settings_payload() -> dict:
+def _build_settings_payload(resource_status: dict[str, bool] | None = None) -> dict:
     config = _get_runtime_config()
     translation = _load_translation_config()
     settings = _runtime_settings_from_config(config)
 
-    resources = {
-        "argostranslate": False,
-        "language_pack": False,
-    }
-
-    setup_service = _get_setup_service()
-    if setup_service is not None:
-        try:
-            resources = setup_service.get_resource_status(
-                translation["source_language"],
-                translation["target_language"],
-            )
-        except Exception:
-            pass
+    resources = resource_status if isinstance(resource_status, dict) else _get_cached_resource_status()
 
     return {
         "type": "settings_state",
@@ -106,6 +144,57 @@ def _build_settings_payload() -> dict:
         "languages": translation,
         "resources": resources,
     }
+
+
+def _get_cached_resource_status() -> dict[str, bool]:
+    with _resource_status_lock:
+        return {
+            "argostranslate": bool(_resource_status_cache.get("argostranslate", False)),
+            "language_pack": bool(_resource_status_cache.get("language_pack", False)),
+        }
+
+
+def _refresh_resource_status_async(context: object, force: bool = False) -> None:
+    global _resource_status_cache_time, _resource_status_refreshing
+
+    now = time.time()
+    with _resource_status_lock:
+        if _resource_status_refreshing:
+            return
+        if not force and (now - _resource_status_cache_time) < _RESOURCE_STATUS_TTL_SECONDS:
+            return
+        _resource_status_refreshing = True
+
+    def _worker() -> None:
+        global _resource_status_cache_time, _resource_status_refreshing
+
+        status = None
+        try:
+            setup_service = _get_setup_service()
+            translation = _load_translation_config()
+            if setup_service is not None:
+                status = setup_service.get_resource_status(
+                    translation["source_language"],
+                    translation["target_language"],
+                )
+        except Exception:
+            status = None
+        finally:
+            with _resource_status_lock:
+                if isinstance(status, dict):
+                    _resource_status_cache["argostranslate"] = bool(
+                        status.get("argostranslate", False)
+                    )
+                    _resource_status_cache["language_pack"] = bool(
+                        status.get("language_pack", False)
+                    )
+                    _resource_status_cache_time = time.time()
+                _resource_status_refreshing = False
+
+        if isinstance(status, dict):
+            _send_to_webview(context, _build_settings_payload(resource_status=status))
+
+    _MESSAGE_EXECUTOR.submit(_worker)
 
 
 def _run_resource_download(resource_id: str, context: object) -> None:
@@ -163,12 +252,23 @@ def _run_resource_download(resource_id: str, context: object) -> None:
                     "message": "Dang cai thu vien ArgosTranslate...",
                 },
             )
-            ok, message = setup_service.ensure_translation_ready(
-                source_language=source_language,
-                target_language=target_language,
-                auto_install_dependency=True,
-                auto_install_language_pack=False,
-                require_language_pair=False,
+
+            def _install_argos_task():
+                return setup_service.ensure_translation_ready(
+                    source_language=source_language,
+                    target_language=target_language,
+                    auto_install_dependency=True,
+                    auto_install_language_pack=False,
+                    require_language_pair=False,
+                )
+
+            ok, message = _run_with_progress_heartbeat(
+                resource_id=resource_id,
+                context=context,
+                initial_progress=36,
+                max_progress=90,
+                message="Dang cai thu vien ArgosTranslate...",
+                task=_install_argos_task,
             )
         elif resource_id == "language_pack":
             _send_to_webview(
@@ -181,11 +281,22 @@ def _run_resource_download(resource_id: str, context: object) -> None:
                     "message": "Dang kiem tra thu vien ArgosTranslate...",
                 },
             )
-            ok, message = setup_service.ensure_translation_ready(
-                source_language=source_language,
-                target_language=target_language,
-                auto_install_dependency=True,
-                auto_install_language_pack=True,
+
+            def _install_pack_task():
+                return setup_service.ensure_translation_ready(
+                    source_language=source_language,
+                    target_language=target_language,
+                    auto_install_dependency=True,
+                    auto_install_language_pack=True,
+                )
+
+            ok, message = _run_with_progress_heartbeat(
+                resource_id=resource_id,
+                context=context,
+                initial_progress=26,
+                max_progress=92,
+                message="Dang tai language pack, co the mat vai phut...",
+                task=_install_pack_task,
             )
         else:
             _send_to_webview(
@@ -212,6 +323,7 @@ def _run_resource_download(resource_id: str, context: object) -> None:
                 },
             )
             _send_to_webview(context, _build_settings_payload())
+            _refresh_resource_status_async(context, force=True)
             return
 
         _send_to_webview(
@@ -225,6 +337,7 @@ def _run_resource_download(resource_id: str, context: object) -> None:
             },
         )
         _send_to_webview(context, _build_settings_payload())
+        _refresh_resource_status_async(context, force=True)
     finally:
         _resource_download_lock.release()
 
@@ -274,7 +387,12 @@ def _start_auto_setup_if_needed() -> None:
         if message:
             print(f"[{ADDON_PACKAGE}] Auto setup skipped: {message}")
 
-    threading.Thread(target=_bootstrap, name="apl-auto-setup", daemon=True).start()
+    def _start_later() -> None:
+        threading.Thread(target=_bootstrap, name="apl-auto-setup", daemon=True).start()
+
+    timer = threading.Timer(8.0, _start_later)
+    timer.daemon = True
+    timer.start()
 
 
 def _send_to_webview(context: object, payload: dict) -> None:
@@ -373,6 +491,7 @@ def _run_translate_message(phrase: str, context: object) -> None:
 def on_js_message(handled, message: str, context):
     if message == "settings:get":
         _send_to_webview(context, _build_settings_payload())
+        _refresh_resource_status_async(context)
         return (True, None)
 
     if message.startswith("settings:save:"):
@@ -401,36 +520,22 @@ def on_js_message(handled, message: str, context):
 
         _save_runtime_settings(payload)
         _send_to_webview(context, _build_settings_payload())
+        _refresh_resource_status_async(context)
         return (True, None)
 
     if message.startswith("settings:download:"):
         resource_id = unquote(message[len("settings:download:") :]).strip()
-        threading.Thread(
-            target=_run_resource_download,
-            args=(resource_id, context),
-            name=f"apl-download-{resource_id}",
-            daemon=True,
-        ).start()
+        _MESSAGE_EXECUTOR.submit(_run_resource_download, resource_id, context)
         return (True, None)
 
     if message.startswith("lookup:"):
         word = unquote(message[7:]).strip()
-        threading.Thread(
-            target=_run_lookup_message,
-            args=(word, context),
-            name="apl-lookup",
-            daemon=True,
-        ).start()
+        _MESSAGE_EXECUTOR.submit(_run_lookup_message, word, context)
         return (True, None)
 
     if message.startswith("translate:"):
         phrase = unquote(message[10:]).strip()
-        threading.Thread(
-            target=_run_translate_message,
-            args=(phrase, context),
-            name="apl-translate",
-            daemon=True,
-        ).start()
+        _MESSAGE_EXECUTOR.submit(_run_translate_message, phrase, context)
         return (True, None)
 
     return handled

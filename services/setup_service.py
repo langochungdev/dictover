@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import shutil
 import site
 import subprocess
 import sys
@@ -45,13 +46,18 @@ def load_setup_config() -> dict[str, bool]:
     return merged
 
 
-def _import_argos_modules():
+def _import_argos_modules_with_error():
     try:
         argos_translate = importlib.import_module("argostranslate.translate")
         argos_package = importlib.import_module("argostranslate.package")
-        return argos_translate, argos_package
-    except Exception:
-        return None, None
+        return argos_translate, argos_package, ""
+    except Exception as error:
+        return None, None, f"{type(error).__name__}: {error}"
+
+
+def _import_argos_modules():
+    argos_translate, argos_package, _ = _import_argos_modules_with_error()
+    return argos_translate, argos_package
 
 
 def _append_sys_path(path: str | None) -> None:
@@ -129,24 +135,40 @@ def _is_pair_installed(argos_translate, source_language: str, target_language: s
     return False
 
 
-def _install_argostranslate_dependency() -> tuple[bool, str]:
+def _install_argostranslate_dependency(
+    *,
+    force_reinstall: bool = False,
+    clean_target: bool = False,
+) -> tuple[bool, str]:
     env = os.environ.copy()
     env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
     env.setdefault("PYTHONUTF8", "1")
 
+    if clean_target and VENDOR_PATH.exists():
+        try:
+            shutil.rmtree(VENDOR_PATH)
+        except Exception as error:
+            return False, f"Cannot clean vendor path: {error}"
+
     VENDOR_PATH.mkdir(parents=True, exist_ok=True)
 
+    command = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+    ]
+    if force_reinstall:
+        command.extend(["--force-reinstall", "--no-cache-dir"])
+    command.extend([
+        "--target",
+        str(VENDOR_PATH),
+        "argostranslate",
+    ])
+
     process = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "--target",
-            str(VENDOR_PATH),
-            "argostranslate",
-        ],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -199,7 +221,9 @@ def ensure_translation_ready(
         if _last_error_message and now - _last_error_time < _SETUP_COOLDOWN_SECONDS:
             return False, _last_error_message
 
-        argos_translate, argos_package = _import_argos_modules_with_refresh()
+        argos_translate, argos_package = _import_argos_modules()
+        if argos_translate is None or argos_package is None:
+            argos_translate, argos_package = _import_argos_modules_with_refresh()
 
         if argos_translate is None or argos_package is None:
             if not auto_install_dependency:
@@ -213,11 +237,23 @@ def ensure_translation_ready(
 
             argos_translate, argos_package = _import_argos_modules_with_refresh()
             if argos_translate is None or argos_package is None:
+                repair_ok, repair_message = _install_argostranslate_dependency(
+                    force_reinstall=True,
+                    clean_target=True,
+                )
+                if repair_ok:
+                    argos_translate, argos_package = _import_argos_modules_with_refresh()
+
+            if argos_translate is None or argos_package is None:
+                _, _, import_error = _import_argos_modules_with_error()
                 _last_error_time = now
                 _last_error_message = (
-                    "ArgosTranslate da cai xong nhung Anki chua nap duoc thu vien moi. "
-                    "Hay tat han Anki va mo lai, sau do bam tai lai."
+                    "ArgosTranslate da cai xong nhung Anki khong nap duoc thu vien. "
+                    "Thu xoa thu muc _vendor trong addon, mo lai Anki va bam tai lai. "
+                    f"Chi tiet import: {import_error or 'unknown'}"
                 )
+                if repair_message:
+                    _last_error_message = f"{_last_error_message} | Cai lai: {repair_message}"
                 return False, _last_error_message
 
         if not require_language_pair:
@@ -263,7 +299,7 @@ def bootstrap_from_config(source_language: str, target_language: str) -> tuple[b
 
 
 def get_resource_status(source_language: str, target_language: str) -> dict[str, bool]:
-    argos_translate, argos_package = _import_argos_modules_with_refresh()
+    argos_translate, argos_package = _import_argos_modules()
     dependency_installed = argos_translate is not None and argos_package is not None
     language_pack_installed = False
 

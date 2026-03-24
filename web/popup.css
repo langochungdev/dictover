@@ -31,35 +31,38 @@
     position: fixed;
     z-index: 10001;
     width: min(360px, calc(100vw - 24px));
-    max-height: calc(100vh - 24px);
-    overflow: auto;
+    max-height: var(--apl-subpanel-max-height, calc(100vh - 24px));
+    overflow: hidden;
     border: 1px solid #d7dde9;
     border-radius: 12px;
     background: #ffffff;
     color: #121826;
     box-shadow: 0 16px 34px rgba(18, 24, 38, 0.18);
     overscroll-behavior: contain;
-}
-
-.apl-subpanel-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid #edf1f7;
+    flex-direction: column;
+    --apl-subpanel-font-size: clamp(10px, 1.4vh, 13px);
+    --apl-subpanel-line-height: 1.42;
 }
 
-.apl-subpanel-title {
-    font-size: 12px;
-    font-weight: 700;
-    color: #2451a6;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+.apl-subpanel-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #f2f5fb;
+    color: #2f3b52;
 }
 
 .apl-subpanel-body {
-    padding: 10px 12px;
+    padding: 8px 34px 8px 10px;
+    overflow: hidden;
+    flex: 1;
+    font-size: var(--apl-subpanel-font-size);
+    line-height: var(--apl-subpanel-line-height);
 }
 
 .apl-header {

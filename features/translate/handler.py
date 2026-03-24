@@ -17,9 +17,9 @@ except ImportError:
 DEFAULT_CONFIG: dict[str, object] = {
     "source_language": "en",
     "target_language": "vi",
-    "auto_setup_on_startup": True,
-    "auto_install_argostranslate": True,
-    "auto_install_language_pack": True,
+    "auto_setup_on_startup": False,
+    "auto_install_argostranslate": False,
+    "auto_install_language_pack": False,
 }
 
 

@@ -26,6 +26,7 @@ def _ignore_filter(_dir: str, names: list[str]) -> set[str]:
         ".git",
         ".github",
         ".pytest_cache",
+        "_vendor",
         "__pycache__",
         "tests",
     }

@@ -324,6 +324,41 @@
     panel.style.left = clamp(best ? best.left : mainRect.right + gap, margin, maxX) + "px";
     panel.style.top = clamp(best ? best.top : mainRect.top, margin, maxY) + "px";
     panel.setAttribute("data-placement", best ? best.placement : "right-top");
+    fitSubPanelToViewport(panel);
+  }
+
+  function fitSubPanelToViewport(panel) {
+    if (!panel) {
+      return;
+    }
+
+    const margin = 12;
+    const rect = panel.getBoundingClientRect();
+    const availableHeight = Math.max(120, window.innerHeight - margin * 2);
+    const constrainedHeight = Math.max(120, Math.min(rect.height || availableHeight, availableHeight));
+
+    panel.style.setProperty("--apl-subpanel-max-height", constrainedHeight + "px");
+    fitSubPanelText(panel);
+  }
+
+  function fitSubPanelText(panel) {
+    const body = panel ? panel.querySelector(".apl-subpanel-body") : null;
+    if (!body) {
+      return;
+    }
+
+    const maxFont = 14;
+    const minFont = 8;
+    const step = 0.5;
+    let fontSize = maxFont;
+
+    body.style.fontSize = fontSize + "px";
+    while (fontSize > minFont && body.scrollHeight > body.clientHeight) {
+      fontSize = Math.max(minFont, fontSize - step);
+      body.style.fontSize = fontSize + "px";
+    }
+
+    panel.style.setProperty("--apl-subpanel-font-size", fontSize + "px");
   }
 
   function openSubPanel(container) {
@@ -339,10 +374,7 @@
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "false");
     panel.innerHTML =
-      '<div class="apl-subpanel-header">' +
-      '<div class="apl-subpanel-title">Chi tiet</div>' +
       '<button class="apl-close apl-subpanel-close" type="button" aria-label="Close">x</button>' +
-      "</div>" +
       '<div class="apl-subpanel-body">' +
       source.innerHTML +
       "</div>";

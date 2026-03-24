@@ -39,6 +39,7 @@ def check_files():
         "features/translate/__init__.py",
         "features/translate/handler.py",
         "services/dictionary_api.py",
+        "services/setup_service.py",
         "services/translation_service.py",
         "web/popup.js",
         "web/popup.css",
@@ -255,9 +256,9 @@ print(
     """
 Next steps:
 1. Symlink or copy this folder into addons21/
-2. Run: python scripts/install_langpack.py (one-time EN->VI package install)
-3. Restart Anki
-4. Open a card and double-click a word for lookup
-5. Select a phrase for translation
+2. Restart Anki
+3. Open Popup Lookup Settings (nut Tools)
+4. Download tung tai nguyen trong phan Tai tai nguyen
+5. Bat/tat lookup, translate, audio trong Settings theo nhu cau
 """
 )

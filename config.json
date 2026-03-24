@@ -2,5 +2,11 @@
   "source_language": "en",
   "target_language": "vi",
   "show_example": true,
-  "max_definitions": 3
+  "max_definitions": 3,
+  "auto_setup_on_startup": false,
+  "auto_install_argostranslate": false,
+  "auto_install_language_pack": false,
+  "enable_lookup": true,
+  "enable_translate": true,
+  "enable_audio": true
 }

@@ -11,6 +11,20 @@
     box-shadow: 0 14px 36px rgba(18, 24, 38, 0.16);
     font-family: "Segoe UI", Tahoma, sans-serif;
     font-size: 13px;
+    transform-origin: top left;
+    overscroll-behavior: contain;
+}
+
+.apl-popover[data-side="top"] {
+    transform-origin: bottom left;
+}
+
+.apl-popover[data-align="left"] {
+    transform-origin: top right;
+}
+
+.apl-popover[data-side="top"][data-align="left"] {
+    transform-origin: bottom right;
 }
 
 .apl-header {
@@ -155,11 +169,19 @@
     padding-top: 6px;
 }
 
-.apl-details-summary {
-    cursor: pointer;
+.apl-details-toggle {
+    border: 0;
+    background: transparent;
+    padding: 0;
     color: #1e3a8a;
     font-size: 12px;
+    cursor: pointer;
     user-select: none;
+}
+
+.apl-details-toggle[aria-expanded="true"] {
+    color: #14306f;
+    font-weight: 600;
 }
 
 .apl-details-body {
@@ -211,4 +233,165 @@
     align-items: center;
     gap: 8px;
     margin-top: 8px;
+}
+
+.apl-settings-trigger {
+    position: fixed;
+    left: 14px;
+    bottom: 14px;
+    z-index: 10010;
+    border: 1px solid #bfcced;
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: #ffffff;
+    color: #14306f;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(22, 30, 44, 0.16);
+}
+
+.apl-settings-root {
+    position: fixed;
+    inset: 0;
+    z-index: 10030;
+}
+
+.apl-settings-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(2px);
+}
+
+.apl-settings-modal {
+    width: min(520px, calc(100vw - 24px));
+    max-height: min(84vh, 760px);
+    overflow: auto;
+    border-radius: 14px;
+    border: 1px solid #d7dde9;
+    background: #ffffff;
+    color: #121826;
+    box-shadow: 0 20px 48px rgba(18, 24, 38, 0.28);
+    padding: 14px;
+}
+
+.apl-settings-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.apl-settings-title-wrap {
+    flex: 1;
+}
+
+.apl-settings-subtitle {
+    color: #2451a6;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.apl-settings-title {
+    margin: 4px 0 0;
+    font-size: 20px;
+    line-height: 1.25;
+}
+
+.apl-settings-section {
+    margin-top: 14px;
+    border-top: 1px solid #edf1f7;
+    padding-top: 12px;
+}
+
+.apl-settings-section-title {
+    margin-bottom: 8px;
+    color: #213250;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.apl-settings-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: #1f2f49;
+}
+
+.apl-settings-toggle input {
+    width: 16px;
+    height: 16px;
+}
+
+.apl-settings-resource {
+    margin-bottom: 10px;
+    border: 1px solid #dce4f5;
+    border-radius: 10px;
+    padding: 10px;
+    background: #f9fbff;
+}
+
+.apl-settings-resource-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.apl-settings-resource-name {
+    font-weight: 600;
+    color: #132548;
+}
+
+.apl-settings-resource-status {
+    color: #31496f;
+    font-size: 12px;
+}
+
+.apl-settings-progress {
+    margin-top: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #dde6fa;
+    overflow: hidden;
+}
+
+.apl-settings-progress-value {
+    height: 100%;
+    background: linear-gradient(90deg, #2451a6, #1d4ed8);
+    transition: width 0.2s ease;
+}
+
+.apl-settings-resource-message {
+    margin-top: 6px;
+    min-height: 16px;
+    font-size: 12px;
+    color: #344b73;
+}
+
+.apl-settings-download {
+    margin-top: 8px;
+}
+
+.apl-settings-error {
+    margin-top: 12px;
+    color: #a12727;
+    font-size: 12px;
+}
+
+.apl-settings-actions {
+    margin-top: 14px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
 }

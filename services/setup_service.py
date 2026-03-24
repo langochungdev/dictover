@@ -1,0 +1,214 @@
+from __future__ import annotations
+
+import importlib
+import json
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.json"
+
+DEFAULT_SETUP_CONFIG: dict[str, bool] = {
+    "auto_setup_on_startup": True,
+    "auto_install_argostranslate": True,
+    "auto_install_language_pack": True,
+}
+
+_SETUP_COOLDOWN_SECONDS = 30
+_setup_lock = threading.Lock()
+_last_error_time = 0.0
+_last_error_message = ""
+
+
+def load_setup_config() -> dict[str, bool]:
+    if not CONFIG_PATH.exists():
+        return DEFAULT_SETUP_CONFIG.copy()
+
+    try:
+        payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return DEFAULT_SETUP_CONFIG.copy()
+
+    if not isinstance(payload, dict):
+        return DEFAULT_SETUP_CONFIG.copy()
+
+    merged = DEFAULT_SETUP_CONFIG.copy()
+    for key, default in DEFAULT_SETUP_CONFIG.items():
+        merged[key] = bool(payload.get(key, default))
+    return merged
+
+
+def _import_argos_modules():
+    try:
+        argos_translate = importlib.import_module("argostranslate.translate")
+        argos_package = importlib.import_module("argostranslate.package")
+        return argos_translate, argos_package
+    except Exception:
+        return None, None
+
+
+def _is_pair_installed(argos_translate, source_language: str, target_language: str) -> bool:
+    installed_languages = argos_translate.get_installed_languages()
+    source = next((lang for lang in installed_languages if lang.code == source_language), None)
+    if source is None:
+        return False
+
+    if hasattr(source, "get_translation_languages"):
+        try:
+            for target in source.get_translation_languages():
+                if getattr(target, "code", "") == target_language:
+                    return True
+        except Exception:
+            pass
+
+    translations = getattr(source, "translations_from", None)
+    if isinstance(translations, list):
+        for translation in translations:
+            to_language = getattr(translation, "to_lang", None)
+            if getattr(to_language, "code", "") == target_language:
+                return True
+
+    get_translation = getattr(source, "get_translation", None)
+    if callable(get_translation):
+        target = next((lang for lang in installed_languages if lang.code == target_language), None)
+        if target is not None:
+            try:
+                translation = get_translation(target)
+                if translation is not None:
+                    return True
+            except Exception:
+                pass
+
+    return False
+
+
+def _install_argostranslate_dependency() -> tuple[bool, str]:
+    process = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "argostranslate"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode == 0:
+        return True, ""
+
+    output = (process.stderr or process.stdout or "").strip()
+    return False, output or "pip install argostranslate failed"
+
+
+def _install_language_pack(argos_package, source_language: str, target_language: str) -> tuple[bool, str]:
+    try:
+        argos_package.update_package_index()
+        available = argos_package.get_available_packages()
+    except Exception as error:
+        return False, f"Cannot update Argos index: {error}"
+
+    package = next(
+        (
+            pkg
+            for pkg in available
+            if pkg.from_code == source_language and pkg.to_code == target_language
+        ),
+        None,
+    )
+    if package is None:
+        return False, f"Cannot find Argos package {source_language}->{target_language}"
+
+    try:
+        package_path = package.download()
+        argos_package.install_from_path(package_path)
+        return True, ""
+    except Exception as error:
+        return False, f"Cannot install Argos package {source_language}->{target_language}: {error}"
+
+
+def ensure_translation_ready(
+    source_language: str,
+    target_language: str,
+    auto_install_dependency: bool,
+    auto_install_language_pack: bool,
+) -> tuple[bool, str]:
+    global _last_error_time, _last_error_message
+
+    with _setup_lock:
+        now = time.time()
+        if _last_error_message and now - _last_error_time < _SETUP_COOLDOWN_SECONDS:
+            return False, _last_error_message
+
+        argos_translate, argos_package = _import_argos_modules()
+
+        if argos_translate is None or argos_package is None:
+            if not auto_install_dependency:
+                return False, "argostranslate is not installed"
+
+            ok, message = _install_argostranslate_dependency()
+            if not ok:
+                _last_error_time = now
+                _last_error_message = message
+                return False, message
+
+            importlib.invalidate_caches()
+            argos_translate, argos_package = _import_argos_modules()
+            if argos_translate is None or argos_package is None:
+                _last_error_time = now
+                _last_error_message = "argostranslate was installed but cannot be imported"
+                return False, _last_error_message
+
+        if _is_pair_installed(argos_translate, source_language, target_language):
+            return True, ""
+
+        if not auto_install_language_pack:
+            return False, f"Missing Argos language pack {source_language}->{target_language}"
+
+        ok, message = _install_language_pack(argos_package, source_language, target_language)
+        if not ok:
+            _last_error_time = now
+            _last_error_message = message
+            return False, message
+
+        if not _is_pair_installed(argos_translate, source_language, target_language):
+            _last_error_time = now
+            _last_error_message = (
+                f"Argos language pack {source_language}->{target_language} is still unavailable"
+            )
+            return False, _last_error_message
+
+        _last_error_message = ""
+        _last_error_time = 0.0
+        return True, ""
+
+
+def bootstrap_from_config(source_language: str, target_language: str) -> tuple[bool, str]:
+    config = load_setup_config()
+    if not config.get("auto_setup_on_startup", True):
+        return False, "auto setup is disabled"
+
+    return ensure_translation_ready(
+        source_language=source_language,
+        target_language=target_language,
+        auto_install_dependency=config.get("auto_install_argostranslate", True),
+        auto_install_language_pack=config.get("auto_install_language_pack", True),
+    )
+
+
+def get_resource_status(source_language: str, target_language: str) -> dict[str, bool]:
+    argos_translate, argos_package = _import_argos_modules()
+    dependency_installed = argos_translate is not None and argos_package is not None
+    language_pack_installed = False
+
+    if dependency_installed:
+        try:
+            language_pack_installed = _is_pair_installed(
+                argos_translate,
+                source_language,
+                target_language,
+            )
+        except Exception:
+            language_pack_installed = False
+
+    return {
+        "argostranslate": dependency_installed,
+        "language_pack": language_pack_installed,
+    }

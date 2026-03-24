@@ -43,8 +43,8 @@
   let settingsMessage = "";
   const SETTINGS_REQUEST_COOLDOWN_MS = 3000;
   const detailsToggleLabels = {
-    closed: "Xem them dinh nghia va vi du",
-    open: "An chi tiet",
+    closed: "Xem them",
+    open: "An",
   };
 
   function now() {
@@ -374,7 +374,6 @@
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "false");
     panel.innerHTML =
-      '<button class="apl-close apl-subpanel-close" type="button" aria-label="Close">x</button>' +
       '<div class="apl-subpanel-body">' +
       source.innerHTML +
       "</div>";
@@ -383,13 +382,6 @@
     subPanelEl = panel;
     placeSubPanel(panel);
     syncDetailsToggleState(true);
-
-    const closeButton = panel.querySelector(".apl-subpanel-close");
-    if (closeButton) {
-      closeButton.addEventListener("click", function () {
-        closeSubPanel();
-      });
-    }
   }
 
 
@@ -570,7 +562,8 @@
       const phonetic = escapeHtml(data.phonetic || "");
       const audio = escapeHtml(data.audio_url || "");
       const meanings = data.meanings || [];
-      const translated = escapeHtml(data.translated || "") || firstDefinitionText(meanings);
+      const translated = escapeHtml(data.translated || "");
+      const englishDefinition = firstDefinitionText(meanings);
       const pos = firstPartOfSpeech(meanings);
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
       lastLookupDetails = renderMeanings(meanings);
@@ -578,7 +571,7 @@
       return (
         '<div class="apl-body apl-lookup-compact">' +
         '<div class="apl-lookup-top">' +
-        '<div class="apl-lookup-en">' +
+        '<div class="apl-lookup-word">' +
         word +
         "</div>" +
         '<button class="apl-button apl-audio" type="button" data-word="' +
@@ -593,6 +586,7 @@
         translated +
         "</div>" +
         '<div class="apl-lookup-meta">' +
+        '<div class="apl-lookup-meta-left">' +
         '<div class="apl-phonetic">' +
         phonetic +
         "</div>" +
@@ -600,13 +594,15 @@
         pos +
         "</div>" +
         "</div>" +
-        '<div class="apl-details">' +
         '<button class="apl-details-toggle" type="button" aria-expanded="false">' +
         detailsToggleLabels.closed +
         "</button>" +
+        "</div>" +
+        '<div class="apl-lookup-definition">' +
+        englishDefinition +
+        "</div>" +
         '<div class="apl-details-source" hidden>' +
         lastLookupDetails +
-        "</div>" +
         "</div>" +
         "</div>"
       );

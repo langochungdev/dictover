@@ -300,6 +300,10 @@ def bootstrap_from_config(source_language: str, target_language: str) -> tuple[b
 
 def get_resource_status(source_language: str, target_language: str) -> dict[str, bool]:
     argos_translate, argos_package = _import_argos_modules()
+    if argos_translate is None or argos_package is None:
+        # Status checks should still find modules installed in delayed paths
+        # (usersite/site-packages) without requiring a manual restart cycle.
+        argos_translate, argos_package = _import_argos_modules_with_refresh()
     dependency_installed = argos_translate is not None and argos_package is not None
     language_pack_installed = False
 

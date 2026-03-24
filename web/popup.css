@@ -45,24 +45,13 @@
     --apl-subpanel-line-height: 1.42;
 }
 
-.apl-subpanel-close {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 1;
-    width: 24px;
-    height: 24px;
-    border-radius: 999px;
-    background: #f2f5fb;
-    color: #2f3b52;
-}
-
 .apl-subpanel-body {
-    padding: 8px 34px 8px 10px;
+    padding: 8px 10px;
     overflow: hidden;
     flex: 1;
     font-size: var(--apl-subpanel-font-size);
     line-height: var(--apl-subpanel-line-height);
+    text-align: left;
 }
 
 .apl-header {
@@ -168,21 +157,29 @@
     padding: 10px 12px;
 }
 
-.apl-lookup-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.apl-lookup-en {
+.apl-lookup-word {
     font-weight: 600;
     color: #121826;
     word-break: break-word;
 }
 
+.apl-lookup-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
 .apl-lookup-vi {
-    margin-top: 8px;
+    margin-top: 6px;
+    color: #24324a;
+    word-break: break-word;
+}
+
+.apl-lookup-definition {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #edf1f7;
     color: #24324a;
     word-break: break-word;
 }
@@ -195,16 +192,21 @@
     gap: 8px;
 }
 
+.apl-lookup-meta-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.apl-lookup-meta .apl-phonetic {
+    margin-top: 0;
+}
+
 .apl-pos-inline {
     color: #4d5b79;
     font-size: 12px;
     text-transform: lowercase;
-}
-
-.apl-details {
-    margin-top: 8px;
-    border-top: 1px solid #edf1f7;
-    padding-top: 6px;
 }
 
 .apl-details-toggle {

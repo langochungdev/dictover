@@ -63,7 +63,7 @@ def handle_lookup(word: str) -> dict[str, Any]:
         try:
             translated = translation_service.translate_text(normalized, "en", "vi")
         except Exception:
-            translated = ""
+            translated = "Khong the dich nghia tieng Viet luc nay."
 
         return {
             "type": "lookup",

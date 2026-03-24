@@ -9,13 +9,14 @@ from urllib.parse import unquote
 
 from aqt import gui_hooks, mw
 
-ADDON_PACKAGE = "anki_popup_lookup"
+ADDON_MODULE = __name__.split(".", 1)[0]
 ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
 ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
+ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
 ASSET_VERSION = "20260324e"
-ASSET_CSS_PATH = f"/_addons/{ADDON_PACKAGE}/web/popup.css?v={ASSET_VERSION}"
-ASSET_JS_PATH = f"/_addons/{ADDON_PACKAGE}/web/popup.js?v={ASSET_VERSION}"
+ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
+ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
 
 if str(ADDON_DIR) not in sys.path:
     sys.path.insert(0, str(ADDON_DIR))
@@ -68,7 +69,7 @@ def _save_runtime_settings(partial_settings: dict[str, bool]) -> dict[str, bool]
     try:
         mw.addonManager.writeConfig(__name__, config)
     except Exception as error:
-        print(f"[{ADDON_PACKAGE}] Cannot save runtime settings: {error}")
+        print(f"[{ADDON_MODULE}] Cannot save runtime settings: {error}")
 
     return merged
 
@@ -134,7 +135,7 @@ def _send_to_webview(context: object, payload: dict) -> None:
             if getattr(mw, "web", None) is not None:
                 mw.web.eval(js)
         except Exception as error:
-            print(f"[{ADDON_PACKAGE}] Cannot update webview: {error}")
+            print(f"[{ADDON_MODULE}] Cannot update webview: {error}")
 
     taskman = getattr(mw, "taskman", None)
     if taskman is not None:
@@ -174,7 +175,7 @@ def on_webview_will_set_content(web_content, context) -> None:
 def _run_lookup_message(word: str, context: object) -> None:
     try:
         handler_module = importlib.import_module(
-            f"{ADDON_PACKAGE}.features.lookup.handler"
+            ".features.lookup.handler", package=__name__
         )
         handle_lookup = handler_module.handle_lookup
         result = handle_lookup(word)
@@ -190,7 +191,7 @@ def _run_lookup_message(word: str, context: object) -> None:
 def _run_translate_message(phrase: str, context: object) -> None:
     try:
         handler_module = importlib.import_module(
-            f"{ADDON_PACKAGE}.features.translate.handler"
+            ".features.translate.handler", package=__name__
         )
         handle_translate = handler_module.handle_translate
         result = handle_translate(phrase)

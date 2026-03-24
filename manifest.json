@@ -3,7 +3,6 @@
   "name": "Popup Lookup - Definition & Translation",
   "mod": 0,
   "min_point_version": 231000,
-  "max_point_version": null,
   "conflicts": [],
   "tags": ["lookup", "dictionary", "translation"]
 }

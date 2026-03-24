@@ -17,6 +17,7 @@
   let settingsLastRequestedAt = 0;
   let settingsProgressTickerId = null;
   let subPanelEl = null;
+  let pendingCommandToken = 0;
   let lastLookupDetails = null;
   let lastAnchor = { x: 24, y: 24 };
   let pendingTimer = null;
@@ -779,6 +780,7 @@
     }
 
     pushDebug("Nhan response tu Python: " + JSON.stringify(data));
+    pendingCommandToken += 1;
 
     if (!popoverEl) {
       showPopover(lastAnchor.x, lastAnchor.y, data);
@@ -865,6 +867,14 @@
   }
 
   function ensureSettingsTrigger() {
+    // Temporarily disable Tools trigger in UI; keep settings logic for future use.
+    const existingButtons = document.querySelectorAll(".apl-settings-trigger");
+    existingButtons.forEach(function (button) {
+      button.remove();
+    });
+    settingsTriggerEl = null;
+    return;
+
     let isTopWindow = false;
     try {
       isTopWindow = window.top === window;
@@ -1139,20 +1149,24 @@
     showPopover(anchor.x, anchor.y, { loading: true, word: text });
 
     if (wordCount === 1) {
-      sendCommand("lookup", text);
+      sendCommand("lookup", text, anchor);
       return;
     }
 
-    sendCommand("translate", text);
+    sendCommand("translate", text, anchor);
   });
 
-  function sendCommand(commandType, text) {
+  function sendCommand(commandType, text, anchor) {
+    pendingCommandToken += 1;
+    const resolvedAnchor = anchor || lastAnchor;
+    lastAnchor = { x: resolvedAnchor.x || lastAnchor.x, y: resolvedAnchor.y || lastAnchor.y };
+
     const payload = commandType + ":" + encodeURIComponent(text);
     const sent = sendPycmd(payload);
     if (!sent) {
       showPopover(lastAnchor.x, lastAnchor.y, {
         type: "error",
-        message: "Khong goi duoc pycmd. Bam Shift de mo debug.",
+        message: "Khong goi duoc pycmd.",
       });
       return;
     }
@@ -1175,11 +1189,6 @@
   });
 
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Shift" && !event.repeat) {
-      toggleDebugPanel();
-      return;
-    }
-
     if (event.key === "Escape") {
       closeSettingsModal();
       closeSubPanel();

@@ -4,8 +4,6 @@
   let debugLogEl = null;
   let settingsTriggerEl = null;
   let settingsModalEl = null;
-  let subPanelEl = null;
-  let lastLookupDetails = null;
   let lastAnchor = { x: 24, y: 24 };
   let pendingTimer = null;
   const debugLines = [];

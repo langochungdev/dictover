@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import site
 import subprocess
 import sys
+import sysconfig
 import threading
 import time
 from pathlib import Path
@@ -49,6 +52,44 @@ def _import_argos_modules():
         return None, None
 
 
+def _append_sys_path(path: str | None) -> None:
+    if not path:
+        return
+    normalized = str(Path(path))
+    if normalized and normalized not in sys.path and Path(normalized).exists():
+        sys.path.insert(0, normalized)
+
+
+def _refresh_python_paths() -> None:
+    """Add likely install locations so newly pip-installed modules are importable immediately."""
+    try:
+        _append_sys_path(site.getusersitepackages())
+    except Exception:
+        pass
+
+    try:
+        for path in site.getsitepackages():
+            _append_sys_path(path)
+    except Exception:
+        pass
+
+    for key in ["purelib", "platlib"]:
+        try:
+            _append_sys_path(sysconfig.get_paths().get(key))
+        except Exception:
+            pass
+
+
+def _import_argos_modules_with_refresh():
+    modules = _import_argos_modules()
+    if modules[0] is not None and modules[1] is not None:
+        return modules
+
+    importlib.invalidate_caches()
+    _refresh_python_paths()
+    return _import_argos_modules()
+
+
 def _is_pair_installed(argos_translate, source_language: str, target_language: str) -> bool:
     installed_languages = argos_translate.get_installed_languages()
     source = next((lang for lang in installed_languages if lang.code == source_language), None)
@@ -85,11 +126,16 @@ def _is_pair_installed(argos_translate, source_language: str, target_language: s
 
 
 def _install_argostranslate_dependency() -> tuple[bool, str]:
+    env = os.environ.copy()
+    env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+    env.setdefault("PYTHONUTF8", "1")
+
     process = subprocess.run(
         [sys.executable, "-m", "pip", "install", "argostranslate"],
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
     if process.returncode == 0:
         return True, ""
@@ -137,7 +183,7 @@ def ensure_translation_ready(
         if _last_error_message and now - _last_error_time < _SETUP_COOLDOWN_SECONDS:
             return False, _last_error_message
 
-        argos_translate, argos_package = _import_argos_modules()
+        argos_translate, argos_package = _import_argos_modules_with_refresh()
 
         if argos_translate is None or argos_package is None:
             if not auto_install_dependency:
@@ -149,11 +195,13 @@ def ensure_translation_ready(
                 _last_error_message = message
                 return False, message
 
-            importlib.invalidate_caches()
-            argos_translate, argos_package = _import_argos_modules()
+            argos_translate, argos_package = _import_argos_modules_with_refresh()
             if argos_translate is None or argos_package is None:
                 _last_error_time = now
-                _last_error_message = "argostranslate was installed but cannot be imported"
+                _last_error_message = (
+                    "ArgosTranslate da cai xong nhung Anki chua nap duoc thu vien moi. "
+                    "Hay tat han Anki va mo lai, sau do bam tai lai."
+                )
                 return False, _last_error_message
 
         if _is_pair_installed(argos_translate, source_language, target_language):

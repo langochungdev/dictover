@@ -48,8 +48,8 @@
     language_pack: 300,
   };
   const detailsToggleLabels = {
-    closed: "Xem them",
-    open: "An",
+    closed: "▸",
+    open: "▾",
   };
 
   function now() {
@@ -132,13 +132,16 @@
       return;
     }
 
-    const detailsToggle = popoverEl.querySelector(".apl-details-toggle");
+    const detailsToggle = popoverEl.querySelector(".apl-lookup-definition-toggle");
     if (!detailsToggle) {
       return;
     }
 
     detailsToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    detailsToggle.textContent = expanded ? detailsToggleLabels.open : detailsToggleLabels.closed;
+    const iconEl = detailsToggle.querySelector(".apl-definition-toggle-icon");
+    if (iconEl) {
+      iconEl.textContent = expanded ? detailsToggleLabels.open : detailsToggleLabels.closed;
+    }
   }
 
   function closeSubPanel() {
@@ -458,18 +461,12 @@
       return;
     }
 
-    const maxFont = 14;
-    const minFont = 8;
-    const step = 0.5;
-    let fontSize = maxFont;
-
-    body.style.fontSize = fontSize + "px";
-    while (fontSize > minFont && body.scrollHeight > body.clientHeight) {
-      fontSize = Math.max(minFont, fontSize - step);
-      body.style.fontSize = fontSize + "px";
-    }
-
-    panel.style.setProperty("--apl-subpanel-font-size", fontSize + "px");
+    const baseElement = popoverEl || document.body;
+    const computed = window.getComputedStyle(baseElement);
+    const parsed = parseFloat(computed.fontSize || "");
+    const resolvedFontSize = Number.isFinite(parsed) && parsed > 0 ? parsed : 14;
+    body.style.fontSize = resolvedFontSize + "px";
+    panel.style.setProperty("--apl-subpanel-font-size", resolvedFontSize + "px");
   }
 
   function openSubPanel(container) {
@@ -529,11 +526,11 @@
       });
     }
 
-    const detailsToggle = container.querySelector(".apl-details-toggle");
-    if (detailsToggle) {
-      detailsToggle.addEventListener("click", function (event) {
+    const definitionToggle = container.querySelector(".apl-lookup-definition-toggle");
+    if (definitionToggle) {
+      definitionToggle.addEventListener("click", function (event) {
         event.preventDefault();
-        const isOpen = detailsToggle.getAttribute("aria-expanded") === "true";
+        const isOpen = definitionToggle.getAttribute("aria-expanded") === "true";
         if (isOpen) {
           closeSubPanel();
           return;
@@ -681,37 +678,37 @@
 
       return (
         '<div class="apl-body apl-lookup-compact">' +
-        '<div class="apl-lookup-top">' +
-        '<div class="apl-lookup-word">' +
+        '<div class="apl-lookup-headerline">' +
+        '<div class="apl-lookup-headertext">' +
+        '<span class="apl-lookup-word">' +
         word +
-        "</div>" +
-        '<button class="apl-button apl-audio" type="button" data-word="' +
+        "</span>" +
+        '<span class="apl-lookup-phonetic-inline">' +
+        phonetic +
+        "</span>" +
+        '<span class="apl-pos-inline">' +
+        pos +
+        "</span>" +
+        '<button class="apl-button apl-audio apl-audio-mini" type="button" data-word="' +
         word +
         '" data-audio="' +
         audio +
         '"' +
         audioDisabled +
-        ">Audio</button>" +
+        ' aria-label="Play audio">🔊</button>' +
+        "</div>" +
         "</div>" +
         '<div class="apl-lookup-vi">' +
         translated +
         "</div>" +
-        '<div class="apl-lookup-meta">' +
-        '<div class="apl-lookup-meta-left">' +
-        '<div class="apl-phonetic">' +
-        phonetic +
-        "</div>" +
-        '<div class="apl-pos-inline">' +
-        pos +
-        "</div>" +
-        "</div>" +
-        '<button class="apl-details-toggle" type="button" aria-expanded="false">' +
+        '<button class="apl-lookup-definition-toggle" type="button" aria-expanded="false">' +
+        '<span class="apl-definition-toggle-icon">' +
         detailsToggleLabels.closed +
-        "</button>" +
-        "</div>" +
-        '<div class="apl-lookup-definition">' +
+        "</span>" +
+        '<span class="apl-lookup-definition">' +
         englishDefinition +
-        "</div>" +
+        "</span>" +
+        "</button>" +
         '<div class="apl-details-source" hidden>' +
         lastLookupDetails +
         "</div>" +

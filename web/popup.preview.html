@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Popup UI Preview</title>
+    <link rel="stylesheet" href="./popup.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            color: #121826;
+            background: linear-gradient(180deg, #f4f7fd, #eef2f9);
+        }
+
+        .preview-shell {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #d7dde9;
+            border-radius: 12px;
+            background: #ffffff;
+            box-shadow: 0 10px 24px rgba(18, 24, 38, 0.08);
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 20px;
+        }
+
+        .hint {
+            margin: 0 0 16px;
+            color: #4d5b79;
+            font-size: 14px;
+        }
+
+        .sample-text {
+            margin: 0;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f5;
+            background: #fbfcff;
+            line-height: 1.55;
+        }
+
+        .sample-text+.sample-text {
+            margin-top: 12px;
+        }
+
+        code {
+            background: #eef3ff;
+            border-radius: 6px;
+            padding: 1px 6px;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="preview-shell">
+        <h1>Popup Lookup Preview</h1>
+        <p class="hint">
+            Select one word for lookup or select multiple words for translation. This page mocks
+            <code>window.pycmd</code> so you can preview popover UI without opening Anki.
+        </p>
+
+        <p class="sample-text">
+            Hello everyone. This preview lets you test the lookup popover directly in browser. Try selecting
+            the word <strong>hello</strong> or <strong>serendipity</strong>.
+        </p>
+
+        <p class="sample-text">
+            You can also select a phrase like <em>this is a translation test</em> to preview the translate
+            mode popover.
+        </p>
+    </main>
+
+    <script>
+        (function () {
+            function decodePayload(value) {
+                try {
+                    return decodeURIComponent(value || "");
+                } catch (_error) {
+                    return value || "";
+                }
+            }
+
+            function mockLookupResponse(wordRaw) {
+                const word = (wordRaw || "").trim() || "hello";
+                return {
+                    type: "lookup",
+                    word: word,
+                    phonetic: "/həˈləʊ/",
+                    audio_url: "",
+                    translated: "xin chao",
+                    meanings: [
+                        {
+                            partOfSpeech: "noun",
+                            definitions: [
+                                {
+                                    definition: "an expression of greeting",
+                                    example: "She gave me a cheerful hello.",
+                                },
+                                {
+                                    definition: "a word used to begin a phone call",
+                                    example: "He answered with a quick hello.",
+                                },
+                            ],
+                        },
+                        {
+                            partOfSpeech: "verb",
+                            definitions: [
+                                {
+                                    definition: "to greet someone by saying hello",
+                                    example: "Please hello the guests for me.",
+                                },
+                            ],
+                        },
+                    ],
+                };
+            }
+
+            function mockTranslateResponse(phraseRaw) {
+                const phrase = (phraseRaw || "").trim() || "this is a translation test";
+                return {
+                    type: "translate",
+                    original: phrase,
+                    translated: "day la mot bai kiem tra dich",
+                };
+            }
+
+            window.pycmd = function (message) {
+                const input = String(message || "");
+
+                if (input === "settings:get") {
+                    window.updatePopover({
+                        type: "settings_state",
+                        settings: {
+                            enable_lookup: true,
+                            enable_translate: true,
+                            enable_audio: true,
+                        },
+                        languages: {
+                            source_language: "en",
+                            target_language: "vi",
+                        },
+                        resources: {
+                            mode: "api_only",
+                            status_unknown: false,
+                        },
+                    });
+                    return;
+                }
+
+                if (input.startsWith("lookup:")) {
+                    const query = decodePayload(input.slice("lookup:".length));
+                    window.setTimeout(function () {
+                        window.updatePopover(mockLookupResponse(query));
+                    }, 200);
+                    return;
+                }
+
+                if (input.startsWith("translate:")) {
+                    const query = decodePayload(input.slice("translate:".length));
+                    window.setTimeout(function () {
+                        window.updatePopover(mockTranslateResponse(query));
+                    }, 200);
+                    return;
+                }
+
+                if (input.startsWith("settings:save:")) {
+                    window.updatePopover({
+                        type: "settings_error",
+                        message: "Preview mode: settings are mocked only.",
+                    });
+                    return;
+                }
+
+                if (input.startsWith("settings:download:")) {
+                    window.updatePopover({
+                        type: "settings_error",
+                        message: "Preview mode: offline downloads are disabled.",
+                    });
+                }
+            };
+        })();
+    </script>
+
+    <script src="./popup.js"></script>
+</body>
+
+</html>

@@ -42,6 +42,10 @@
 
   let settingsMessage = "";
   const SETTINGS_REQUEST_COOLDOWN_MS = 3000;
+  const detailsToggleLabels = {
+    closed: "Xem them dinh nghia va vi du",
+    open: "An chi tiet",
+  };
 
   function now() {
     return new Date().toLocaleTimeString();
@@ -112,9 +116,32 @@
   }
 
   function closePopover() {
+    closeSubPanel();
     if (!popoverEl) return;
     popoverEl.remove();
     popoverEl = null;
+  }
+
+  function syncDetailsToggleState(expanded) {
+    if (!popoverEl) {
+      return;
+    }
+
+    const detailsToggle = popoverEl.querySelector(".apl-details-toggle");
+    if (!detailsToggle) {
+      return;
+    }
+
+    detailsToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    detailsToggle.textContent = expanded ? detailsToggleLabels.open : detailsToggleLabels.closed;
+  }
+
+  function closeSubPanel() {
+    if (subPanelEl) {
+      subPanelEl.remove();
+      subPanelEl = null;
+    }
+    syncDetailsToggleState(false);
   }
 
   function closeSettingsModal() {
@@ -229,6 +256,111 @@
     el.setAttribute("data-align", horizontal);
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(value, max));
+  }
+
+  function getSubPanelCandidates(mainRect, panelWidth, panelHeight, gap) {
+    return [
+      { placement: "right-top", left: mainRect.right + gap, top: mainRect.top },
+      { placement: "right-bottom", left: mainRect.right + gap, top: mainRect.bottom - panelHeight },
+      { placement: "left-top", left: mainRect.left - panelWidth - gap, top: mainRect.top },
+      { placement: "left-bottom", left: mainRect.left - panelWidth - gap, top: mainRect.bottom - panelHeight },
+      { placement: "bottom-left", left: mainRect.left, top: mainRect.bottom + gap },
+      { placement: "bottom-right", left: mainRect.right - panelWidth, top: mainRect.bottom + gap },
+      { placement: "top-left", left: mainRect.left, top: mainRect.top - panelHeight - gap },
+      { placement: "top-right", left: mainRect.right - panelWidth, top: mainRect.top - panelHeight - gap },
+    ];
+  }
+
+  function candidateOverflow(left, top, panelWidth, panelHeight, margin, viewportWidth, viewportHeight) {
+    const overflowLeft = Math.max(0, margin - left);
+    const overflowTop = Math.max(0, margin - top);
+    const overflowRight = Math.max(0, left + panelWidth + margin - viewportWidth);
+    const overflowBottom = Math.max(0, top + panelHeight + margin - viewportHeight);
+    return overflowLeft + overflowTop + overflowRight + overflowBottom;
+  }
+
+  function distanceToMain(mainRect, left, top, panelWidth, panelHeight) {
+    const mainCenterX = mainRect.left + mainRect.width / 2;
+    const mainCenterY = mainRect.top + mainRect.height / 2;
+    const panelCenterX = left + panelWidth / 2;
+    const panelCenterY = top + panelHeight / 2;
+    return Math.hypot(mainCenterX - panelCenterX, mainCenterY - panelCenterY);
+  }
+
+  function placeSubPanel(panel) {
+    if (!panel || !popoverEl) {
+      return;
+    }
+
+    const margin = 12;
+    const gap = 8;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const mainRect = popoverEl.getBoundingClientRect();
+    const panelWidth = panel.offsetWidth || 320;
+    const panelHeight = panel.offsetHeight || 260;
+    const candidates = getSubPanelCandidates(mainRect, panelWidth, panelHeight, gap);
+
+    let best = null;
+    candidates.forEach(function (candidate) {
+      const overflow = candidateOverflow(candidate.left, candidate.top, panelWidth, panelHeight, margin, viewportWidth, viewportHeight);
+      const distance = distanceToMain(mainRect, candidate.left, candidate.top, panelWidth, panelHeight);
+      const score = overflow * 10000 + distance;
+
+      if (!best || score < best.score) {
+        best = {
+          left: candidate.left,
+          top: candidate.top,
+          placement: candidate.placement,
+          score: score,
+        };
+      }
+    });
+
+    const maxX = Math.max(margin, viewportWidth - panelWidth - margin);
+    const maxY = Math.max(margin, viewportHeight - panelHeight - margin);
+    panel.style.left = clamp(best ? best.left : mainRect.right + gap, margin, maxX) + "px";
+    panel.style.top = clamp(best ? best.top : mainRect.top, margin, maxY) + "px";
+    panel.setAttribute("data-placement", best ? best.placement : "right-top");
+  }
+
+  function openSubPanel(container) {
+    const source = container.querySelector(".apl-details-source");
+    if (!source) {
+      return;
+    }
+
+    closeSubPanel();
+
+    const panel = document.createElement("div");
+    panel.className = "apl-subpanel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "false");
+    panel.innerHTML =
+      '<div class="apl-subpanel-header">' +
+      '<div class="apl-subpanel-title">Chi tiet</div>' +
+      '<button class="apl-close apl-subpanel-close" type="button" aria-label="Close">x</button>' +
+      "</div>" +
+      '<div class="apl-subpanel-body">' +
+      source.innerHTML +
+      "</div>";
+
+    document.body.appendChild(panel);
+    subPanelEl = panel;
+    placeSubPanel(panel);
+    syncDetailsToggleState(true);
+
+    const closeButton = panel.querySelector(".apl-subpanel-close");
+    if (closeButton) {
+      closeButton.addEventListener("click", function () {
+        closeSubPanel();
+      });
+    }
+  }
+
+
   function showPopover(x, y, state) {
     lastAnchor = { x: x || lastAnchor.x, y: y || lastAnchor.y };
     closePopover();
@@ -263,14 +395,15 @@
     }
 
     const detailsToggle = container.querySelector(".apl-details-toggle");
-    const detailsBody = container.querySelector(".apl-details-body");
-    if (detailsToggle && detailsBody) {
+    if (detailsToggle) {
       detailsToggle.addEventListener("click", function (event) {
         event.preventDefault();
         const isOpen = detailsToggle.getAttribute("aria-expanded") === "true";
-        detailsToggle.setAttribute("aria-expanded", isOpen ? "false" : "true");
-        detailsBody.hidden = isOpen;
-        refreshPopoverPosition();
+        if (isOpen) {
+          closeSubPanel();
+          return;
+        }
+        openSubPanel(container);
       });
     }
   }
@@ -408,6 +541,7 @@
       const translated = escapeHtml(data.translated || "") || firstDefinitionText(meanings);
       const pos = firstPartOfSpeech(meanings);
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
+      lastLookupDetails = renderMeanings(meanings);
 
       return (
         '<div class="apl-body apl-lookup-compact">' +
@@ -435,9 +569,11 @@
         "</div>" +
         "</div>" +
         '<div class="apl-details">' +
-        '<button class="apl-details-toggle" type="button" aria-expanded="false">Xem them dinh nghia va vi du</button>' +
-        '<div class="apl-details-body" hidden>' +
-        renderMeanings(meanings) +
+        '<button class="apl-details-toggle" type="button" aria-expanded="false">' +
+        detailsToggleLabels.closed +
+        "</button>" +
+        '<div class="apl-details-source" hidden>' +
+        lastLookupDetails +
         "</div>" +
         "</div>" +
         "</div>"
@@ -490,6 +626,7 @@
       return;
     }
 
+    closeSubPanel();
     popoverEl.innerHTML = renderState(data);
     bindPopoverActions(popoverEl);
     placePopover(popoverEl, lastAnchor.x, lastAnchor.y);
@@ -500,6 +637,9 @@
       return;
     }
     placePopover(popoverEl, lastAnchor.x, lastAnchor.y);
+    if (subPanelEl) {
+      placeSubPanel(subPanelEl);
+    }
   }
 
   function updateSettingsState(data) {
@@ -585,6 +725,21 @@
   }
 
   function ensureSettingsTrigger() {
+    let isTopWindow = false;
+    try {
+      isTopWindow = window.top === window;
+    } catch (error) {
+      isTopWindow = true;
+    }
+
+    if (!isTopWindow) {
+      const childButtons = document.querySelectorAll(".apl-settings-trigger");
+      childButtons.forEach(function (button) {
+        button.remove();
+      });
+      return;
+    }
+
     const existing = document.querySelectorAll(".apl-settings-trigger");
     if (existing.length > 0) {
       settingsTriggerEl = existing[0];
@@ -862,6 +1017,10 @@
       return;
     }
 
+    if (subPanelEl && subPanelEl.contains(event.target)) {
+      return;
+    }
+
     if (popoverEl && popoverEl.contains(event.target)) {
       return;
     }
@@ -919,6 +1078,10 @@
       return;
     }
 
+    if (subPanelEl && subPanelEl.contains(event.target)) {
+      return;
+    }
+
     if (!popoverEl) return;
     if (popoverEl.contains(event.target)) return;
     closePopover();
@@ -932,6 +1095,7 @@
 
     if (event.key === "Escape") {
       closeSettingsModal();
+      closeSubPanel();
       closePopover();
     }
   });
@@ -945,23 +1109,12 @@
   });
 
   window.addEventListener("resize", refreshPopoverPosition);
+  window.addEventListener("scroll", refreshPopoverPosition, true);
 
   ensureSettingsTrigger();
-  requestSettings(false);
-
-  if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(function () {
-      if (!settingsModalEl) {
-        settingsModalEl = document.createElement("div");
-        settingsModalEl.className = "apl-settings-root apl-settings-root--hidden";
-        document.body.appendChild(settingsModalEl);
-      }
-
-      if (!settingsModalWarm) {
-        renderSettingsModal();
-      }
-    });
-  }
+  window.setTimeout(function () {
+    requestSettings(false);
+  }, 350);
 
   pushDebug("popup.js da duoc load.");
 

@@ -12,6 +12,7 @@ from aqt import gui_hooks, mw
 ADDON_PACKAGE = "anki_popup_lookup"
 ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
+ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
 ASSET_VERSION = "20260324e"
 ASSET_CSS_PATH = f"/_addons/{ADDON_PACKAGE}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_PACKAGE}/web/popup.js?v={ASSET_VERSION}"
@@ -20,6 +21,8 @@ if str(ADDON_DIR) not in sys.path:
     sys.path.insert(0, str(ADDON_DIR))
 if str(ADDON_PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(ADDON_PARENT_DIR))
+if ADDON_VENDOR_DIR.exists() and str(ADDON_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(ADDON_VENDOR_DIR))
 
 mw.addonManager.setWebExports(__name__, r"web/.*\.(css|js|html)")
 
@@ -165,6 +168,7 @@ def _run_resource_download(resource_id: str, context: object) -> None:
                 target_language=target_language,
                 auto_install_dependency=True,
                 auto_install_language_pack=False,
+                require_language_pair=False,
             )
         elif resource_id == "language_pack":
             _send_to_webview(
@@ -321,6 +325,10 @@ def on_card_show(html: str, card, context) -> str:
 
 
 def on_webview_will_set_content(web_content, context) -> None:
+    deck_browser = getattr(mw, "deckBrowser", None)
+    if context is not deck_browser:
+        return
+
     css_list = getattr(web_content, "css", None)
     if isinstance(css_list, list) and ASSET_CSS_PATH not in css_list:
         css_list.append(ASSET_CSS_PATH)
@@ -328,6 +336,38 @@ def on_webview_will_set_content(web_content, context) -> None:
     js_list = getattr(web_content, "js", None)
     if isinstance(js_list, list) and ASSET_JS_PATH not in js_list:
         js_list.append(ASSET_JS_PATH)
+
+
+def _run_lookup_message(word: str, context: object) -> None:
+    try:
+        handler_module = importlib.import_module(
+            f"{ADDON_PACKAGE}.features.lookup.handler"
+        )
+        handle_lookup = handler_module.handle_lookup
+        result = handle_lookup(word)
+    except Exception as error:
+        result = {
+            "type": "error",
+            "message": f"Lookup handler error: {error}",
+        }
+
+    _send_to_webview(context, result)
+
+
+def _run_translate_message(phrase: str, context: object) -> None:
+    try:
+        handler_module = importlib.import_module(
+            f"{ADDON_PACKAGE}.features.translate.handler"
+        )
+        handle_translate = handler_module.handle_translate
+        result = handle_translate(phrase)
+    except Exception as error:
+        result = {
+            "type": "error",
+            "message": f"Translate handler error: {error}",
+        }
+
+    _send_to_webview(context, result)
 
 
 def on_js_message(handled, message: str, context):
@@ -374,37 +414,23 @@ def on_js_message(handled, message: str, context):
         return (True, None)
 
     if message.startswith("lookup:"):
-        try:
-            handler_module = importlib.import_module(
-                f"{ADDON_PACKAGE}.features.lookup.handler"
-            )
-            handle_lookup = handler_module.handle_lookup
-            word = unquote(message[7:]).strip()
-            result = handle_lookup(word)
-        except Exception as error:
-            result = {
-                "type": "error",
-                "message": f"Lookup handler error: {error}",
-            }
-
-        _send_to_webview(context, result)
+        word = unquote(message[7:]).strip()
+        threading.Thread(
+            target=_run_lookup_message,
+            args=(word, context),
+            name="apl-lookup",
+            daemon=True,
+        ).start()
         return (True, None)
 
     if message.startswith("translate:"):
-        try:
-            handler_module = importlib.import_module(
-                f"{ADDON_PACKAGE}.features.translate.handler"
-            )
-            handle_translate = handler_module.handle_translate
-            phrase = unquote(message[10:]).strip()
-            result = handle_translate(phrase)
-        except Exception as error:
-            result = {
-                "type": "error",
-                "message": f"Translate handler error: {error}",
-            }
-
-        _send_to_webview(context, result)
+        phrase = unquote(message[10:]).strip()
+        threading.Thread(
+            target=_run_translate_message,
+            args=(phrase, context),
+            name="apl-translate",
+            daemon=True,
+        ).start()
         return (True, None)
 
     return handled

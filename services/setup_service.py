@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.json"
+ADDON_ROOT = Path(__file__).resolve().parents[1]
+VENDOR_PATH = ADDON_ROOT / "_vendor"
 
 DEFAULT_SETUP_CONFIG: dict[str, bool] = {
     "auto_setup_on_startup": True,
@@ -62,6 +64,8 @@ def _append_sys_path(path: str | None) -> None:
 
 def _refresh_python_paths() -> None:
     """Add likely install locations so newly pip-installed modules are importable immediately."""
+    _append_sys_path(str(VENDOR_PATH))
+
     try:
         _append_sys_path(site.getusersitepackages())
     except Exception:
@@ -130,8 +134,19 @@ def _install_argostranslate_dependency() -> tuple[bool, str]:
     env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
     env.setdefault("PYTHONUTF8", "1")
 
+    VENDOR_PATH.mkdir(parents=True, exist_ok=True)
+
     process = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "argostranslate"],
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--target",
+            str(VENDOR_PATH),
+            "argostranslate",
+        ],
         check=False,
         capture_output=True,
         text=True,
@@ -175,6 +190,7 @@ def ensure_translation_ready(
     target_language: str,
     auto_install_dependency: bool,
     auto_install_language_pack: bool,
+    require_language_pair: bool = True,
 ) -> tuple[bool, str]:
     global _last_error_time, _last_error_message
 
@@ -203,6 +219,11 @@ def ensure_translation_ready(
                     "Hay tat han Anki va mo lai, sau do bam tai lai."
                 )
                 return False, _last_error_message
+
+        if not require_language_pair:
+            _last_error_message = ""
+            _last_error_time = 0.0
+            return True, ""
 
         if _is_pair_installed(argos_translate, source_language, target_language):
             return True, ""
@@ -242,7 +263,7 @@ def bootstrap_from_config(source_language: str, target_language: str) -> tuple[b
 
 
 def get_resource_status(source_language: str, target_language: str) -> dict[str, bool]:
-    argos_translate, argos_package = _import_argos_modules()
+    argos_translate, argos_package = _import_argos_modules_with_refresh()
     dependency_installed = argos_translate is not None and argos_package is not None
     language_pack_installed = False
 

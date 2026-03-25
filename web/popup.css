@@ -425,8 +425,8 @@
 
 .apl-settings-trigger {
     position: fixed;
-    left: 14px;
-    bottom: 14px;
+    right: 14px;
+    top: 14px;
     z-index: 10010;
     border: 1px solid #bfcced;
     border-radius: 999px;
@@ -437,6 +437,13 @@
     font-weight: 600;
     cursor: pointer;
     box-shadow: 0 8px 18px rgba(22, 30, 44, 0.16);
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.apl-settings-trigger--hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
 }
 
 .apl-settings-root {

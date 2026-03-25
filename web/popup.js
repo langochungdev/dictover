@@ -15,6 +15,9 @@
   let settingsModalWarm = false;
   let settingsRequestPending = false;
   let settingsLastRequestedAt = 0;
+  let settingsTriggerHideTimerId = null;
+  let settingsTriggerBootVisibleDone = false;
+  let settingsTriggerHoverListenerBound = false;
   let settingsProgressTickerId = null;
   let subPanelEl = null;
   let pendingCommandToken = 0;
@@ -44,6 +47,9 @@
 
   let settingsMessage = "";
   const SETTINGS_REQUEST_COOLDOWN_MS = 3000;
+  const SETTINGS_TRIGGER_BOOT_VISIBLE_MS = 10000;
+  const SETTINGS_TRIGGER_HOTZONE_TOP_PX = 120;
+  const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
   const RESOURCE_TIMEOUT_SECONDS = {
     argostranslate: 75,
     language_pack: 300,
@@ -866,15 +872,73 @@
     sendPycmd("settings:download:" + encodeURIComponent(resourceId));
   }
 
-  function ensureSettingsTrigger() {
-    // Temporarily disable Tools trigger in UI; keep settings logic for future use.
-    const existingButtons = document.querySelectorAll(".apl-settings-trigger");
-    existingButtons.forEach(function (button) {
-      button.remove();
-    });
-    settingsTriggerEl = null;
-    return;
+  function showSettingsTrigger() {
+    if (!settingsTriggerEl) {
+      return;
+    }
+    settingsTriggerEl.classList.remove("apl-settings-trigger--hidden");
+  }
 
+  function hideSettingsTrigger() {
+    if (!settingsTriggerEl) {
+      return;
+    }
+    settingsTriggerEl.classList.add("apl-settings-trigger--hidden");
+  }
+
+  function isPointerInSettingsHotzone(clientX, clientY) {
+    const viewportWidth =
+      window.innerWidth ||
+      (document.documentElement && document.documentElement.clientWidth) ||
+      0;
+
+    const nearTop = clientY >= 0 && clientY <= SETTINGS_TRIGGER_HOTZONE_TOP_PX;
+    const nearRight = viewportWidth > 0 && viewportWidth - clientX <= SETTINGS_TRIGGER_HOTZONE_RIGHT_PX;
+    return nearTop && nearRight;
+  }
+
+  function handleSettingsTriggerPointerMove(event) {
+    if (!settingsTriggerBootVisibleDone) {
+      return;
+    }
+
+    if (isPointerInSettingsHotzone(event.clientX, event.clientY)) {
+      showSettingsTrigger();
+      return;
+    }
+
+    hideSettingsTrigger();
+  }
+
+  function bindSettingsTriggerHoverReveal() {
+    if (settingsTriggerHoverListenerBound) {
+      return;
+    }
+
+    document.addEventListener("mousemove", handleSettingsTriggerPointerMove);
+    settingsTriggerHoverListenerBound = true;
+  }
+
+  function runSettingsTriggerStartupVisibility() {
+    showSettingsTrigger();
+
+    if (settingsTriggerBootVisibleDone) {
+      return;
+    }
+
+    if (settingsTriggerHideTimerId !== null) {
+      window.clearTimeout(settingsTriggerHideTimerId);
+    }
+
+    settingsTriggerHideTimerId = window.setTimeout(function () {
+      hideSettingsTrigger();
+      settingsTriggerBootVisibleDone = true;
+      settingsTriggerHideTimerId = null;
+      bindSettingsTriggerHoverReveal();
+    }, SETTINGS_TRIGGER_BOOT_VISIBLE_MS);
+  }
+
+  function ensureSettingsTrigger() {
     let isTopWindow = false;
     try {
       isTopWindow = window.top === window;
@@ -887,6 +951,7 @@
       childButtons.forEach(function (button) {
         button.remove();
       });
+      settingsTriggerEl = null;
       return;
     }
 
@@ -896,6 +961,7 @@
       for (let i = 1; i < existing.length; i += 1) {
         existing[i].remove();
       }
+      runSettingsTriggerStartupVisibility();
       return;
     }
 
@@ -903,7 +969,7 @@
     trigger.id = "apl-settings-trigger";
     trigger.className = "apl-settings-trigger";
     trigger.type = "button";
-    trigger.textContent = "Tools!";
+    trigger.textContent = "setting";
     trigger.setAttribute("aria-label", "Open Popup Lookup settings");
 
     trigger.addEventListener("click", function () {
@@ -912,6 +978,7 @@
 
     document.body.appendChild(trigger);
     settingsTriggerEl = trigger;
+    runSettingsTriggerStartupVisibility();
   }
 
   function resourceLabel(resourceId) {

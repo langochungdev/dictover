@@ -1460,7 +1460,6 @@
       '<div class="apl-settings-overlay" role="dialog" aria-modal="true">' +
       '<div class="apl-settings-modal">' +
       '<div class="apl-settings-section">' +
-      '<div class="apl-settings-section-title">Ngôn ngữ</div>' +
       '<div class="apl-settings-language-row">' +
       '<label class="apl-settings-field"><span>Ngôn ngữ vào</span>' +
       languageSelectHtml("apl-settings-source-language", settingsState.languages.source_language, true) +
@@ -1472,27 +1471,29 @@
       "</div>" +
       "</div>" +
       '<div class="apl-settings-section">' +
-      '<div class="apl-settings-section-title">Cách hiện popover</div>' +
       '<label class="apl-settings-radio"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="auto"' +
       triggerModeChecked("auto") +
-      '> Bôi xong tự động hiện popover</label>' +
-      '<label class="apl-settings-radio"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="shortcut"' +
+      '> tự động dịch khi bôi</label>' +
+      '<div class="apl-settings-radio-shortcut-row">' +
+      '<label class="apl-settings-radio apl-settings-radio--inline"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="shortcut"' +
       triggerModeChecked("shortcut") +
-      '> Bôi xong rồi bấm phím tắt để hiện popover</label>' +
+      '> dịch khi bấm phím</label>' +
       '<div class="' + shortcutClass + '">' +
-      '<label class="apl-settings-field"><span>Phím tắt</span>' +
+      '<label class="apl-settings-field apl-settings-field--shortcut-inline"><span>Phím tắt</span>' +
       '<input class="apl-settings-shortcut-input" type="text" readonly value="' +
       escapeHtml(settingsState.popover.shortcut_combo) +
       '" placeholder="Nhấn tổ hợp phím" />' +
       "</label>" +
+      "</div>" +
+      "</div>" +
+      '<div class="' + shortcutClass + '">' +
       '<div class="apl-settings-hint">Chọn ô rồi nhấn trực tiếp phím hoặc tổ hợp phím, ví dụ: Shift, Alt+1, Ctrl+Shift+L.</div>' +
       "</div>" +
       "</div>" +
       '<div class="apl-settings-section">' +
-      '<div class="apl-settings-section-title">Âm thanh</div>' +
       '<label class="apl-settings-toggle"><input class="apl-settings-auto-play-audio" type="checkbox"' +
       (settingsState.popover.auto_play_audio ? " checked" : "") +
-      '"> Tự động phát audio khi popover hiện lên</label>' +
+      '"> tự động phát audio</label>' +
       "</div>" +
       errorHtml +
       "</div>" +
@@ -1625,7 +1626,7 @@
     const shortcutMode = settingsModalEl.querySelector(
       '.apl-settings-trigger-mode[value="shortcut"]'
     );
-    const shortcutGroup = settingsModalEl.querySelector(".apl-settings-shortcut-group");
+    const shortcutGroups = settingsModalEl.querySelectorAll(".apl-settings-shortcut-group");
 
     if (sourceSelect) {
       sourceSelect.value = settingsState.languages.source_language;
@@ -1651,13 +1652,13 @@
     if (shortcutMode) {
       shortcutMode.checked = settingsState.popover.trigger_mode === "shortcut";
     }
-    if (shortcutGroup) {
+    shortcutGroups.forEach(function (shortcutGroup) {
       if (settingsState.popover.trigger_mode === "shortcut") {
         shortcutGroup.classList.remove("apl-settings-shortcut-group--hidden");
       } else {
         shortcutGroup.classList.add("apl-settings-shortcut-group--hidden");
       }
-    }
+    });
 
     return true;
   }
@@ -1730,14 +1731,14 @@
         const values = readSettingsFormValues();
         applySettingsFormValues(values);
 
-        const shortcutGroup = settingsModalEl.querySelector(".apl-settings-shortcut-group");
-        if (shortcutGroup) {
+        const shortcutGroups = settingsModalEl.querySelectorAll(".apl-settings-shortcut-group");
+        shortcutGroups.forEach(function (shortcutGroup) {
           if (settingsState.popover.trigger_mode === "shortcut") {
             shortcutGroup.classList.remove("apl-settings-shortcut-group--hidden");
           } else {
             shortcutGroup.classList.add("apl-settings-shortcut-group--hidden");
           }
-        }
+        });
 
         pushDebug(
           "trigger_mode changed -> " +

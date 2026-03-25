@@ -621,8 +621,32 @@
     color: #1f2f49;
 }
 
+.apl-settings-radio-shortcut-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.apl-settings-radio--inline {
+    margin-bottom: 0;
+    flex: 0 0 auto;
+}
+
 .apl-settings-shortcut-group {
     margin-top: 8px;
+}
+
+.apl-settings-radio-shortcut-row .apl-settings-shortcut-group {
+    margin-top: 0;
+    flex: 1;
+}
+
+.apl-settings-field--shortcut-inline {
+    flex: 1;
+}
+
+.apl-settings-field--shortcut-inline span {
+    display: none;
 }
 
 .apl-settings-shortcut-group--hidden {
@@ -644,6 +668,15 @@
     .apl-settings-swap-languages {
         align-self: center;
         min-width: 60px;
+    }
+
+    .apl-settings-radio-shortcut-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .apl-settings-radio--inline {
+        margin-bottom: 8px;
     }
 }
 

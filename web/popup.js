@@ -25,6 +25,8 @@
   let subPanelEl = null;
   let pendingCommandToken = 0;
   let pendingSelectionAction = null;
+  let activeCommandMeta = null;
+  let pendingNativeAudioFallback = null;
   let lastLookupDetails = null;
   let lastAnchor = { x: 24, y: 24 };
   let pendingTimer = null;
@@ -62,16 +64,16 @@
   const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
   const DEFAULT_SHORTCUT_COMBO = "Alt+1";
   const SUPPORTED_LANGUAGES = [
-    { code: "auto", label: "Tự động nhận diện" },
     { code: "en", label: "Tiếng Anh" },
-    { code: "vi", label: "Tiếng Việt" },
+    { code: "zh-CN", label: "Tiếng Trung" },
     { code: "ja", label: "Tiếng Nhật" },
     { code: "ko", label: "Tiếng Hàn" },
-    { code: "zh-CN", label: "Tiếng Trung (Giản thể)" },
-    { code: "fr", label: "Tiếng Pháp" },
+    { code: "ru", label: "Tiếng Nga" },
+    { code: "fi", label: "Tiếng Phần Lan" },
     { code: "de", label: "Tiếng Đức" },
-    { code: "es", label: "Tiếng Tây Ban Nha" },
+    { code: "vi", label: "Tiếng Việt" },
   ];
+  const AUTO_DETECT_LANGUAGE = { code: "auto", label: "Tự nhận diện" };
   const RESOURCE_TIMEOUT_SECONDS = {
     argostranslate: 75,
     language_pack: 300,
@@ -351,6 +353,56 @@
     debugPanelEl.classList.toggle("apl-debug-panel--show");
   }
 
+  function ensureDebugPanelVisible() {
+    ensureDebugPanel();
+    debugPanelEl.classList.add("apl-debug-panel--show");
+  }
+
+  function shortenForLog(value, maxLength) {
+    const text = String(value || "");
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return text.slice(0, maxLength) + "...";
+  }
+
+  function buildAlternativeAudioUrl(audioUrl) {
+    const url = String(audioUrl || "").trim();
+    if (!url) {
+      return "";
+    }
+
+    if (url.indexOf("translate.googleapis.com/translate_tts") >= 0) {
+      return url
+        .replace("translate.googleapis.com/translate_tts", "translate.google.com/translate_tts")
+        .replace("client=gtx", "client=tw-ob");
+    }
+
+    if (url.indexOf("translate.google.com/translate_tts") >= 0) {
+      return url
+        .replace("translate.google.com/translate_tts", "translate.googleapis.com/translate_tts")
+        .replace("client=tw-ob", "client=gtx");
+    }
+
+    return "";
+  }
+
+  function requestNativeAudioPlayback(audioUrl) {
+    const url = String(audioUrl || "").trim();
+    if (!url) {
+      pushDebug("audio.native skipped (empty url)");
+      return false;
+    }
+
+    const sent = sendPycmd("audio:play:" + encodeURIComponent(url));
+    if (sent) {
+      pushDebug("audio.native request sent");
+      return true;
+    }
+    pushDebug("audio.native request failed to send");
+    return false;
+  }
+
   function armPendingTimeout(command, text) {
     clearPendingTimeout();
     pendingTimer = window.setTimeout(function () {
@@ -551,7 +603,17 @@
       audioButton.addEventListener("click", function () {
         const audioUrl = audioButton.getAttribute("data-audio") || "";
         const word = audioButton.getAttribute("data-word") || "";
-        playAudio(audioUrl, word);
+        const lang = audioButton.getAttribute("data-lang") || "";
+        pushDebug(
+          "audio.click lang=" +
+            (lang || "") +
+            " hasUrl=" +
+            (audioUrl ? "yes" : "no") +
+            " word=" +
+            shortenForLog(word, 80)
+        );
+        ensureDebugPanelVisible();
+        playAudio(audioUrl, word, lang);
       });
     }
 
@@ -569,7 +631,25 @@
     }
   }
 
-  function playAudio(audioUrl, word) {
+  function playAudio(audioUrl, word, lang) {
+    function fallbackSpeech() {
+      if (!window.speechSynthesis || !word) {
+        pushDebug("audio.fallback speechSynthesis unavailable");
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(word);
+      if (lang) {
+        utterance.lang = String(lang);
+      }
+      pushDebug(
+        "audio.fallback speechSynthesis lang=" +
+          (utterance.lang || "") +
+          " voices=" +
+          String((window.speechSynthesis.getVoices() || []).length)
+      );
+      window.speechSynthesis.speak(utterance);
+    }
+
     if (!toolSettings.enable_audio) {
       showPopover(lastAnchor.x, lastAnchor.y, {
         type: "error",
@@ -579,18 +659,59 @@
     }
 
     if (audioUrl) {
+      pushDebug(
+        "audio.play attempt url=" +
+          shortenForLog(audioUrl, 180) +
+          " lang=" +
+          (lang || "")
+      );
       const audio = new Audio(audioUrl);
-      audio.play().catch(function () {
-        if (window.speechSynthesis && word) {
-          window.speechSynthesis.speak(new SpeechSynthesisUtterance(word));
+      audio.play().then(function () {
+        pushDebug("audio.play success");
+      }).catch(function (error) {
+        pushDebug("audio.play failed: " + String(error && error.message ? error.message : error));
+
+        const alternativeUrl = buildAlternativeAudioUrl(audioUrl);
+        if (alternativeUrl) {
+          pushDebug("audio.play retry altUrl=" + shortenForLog(alternativeUrl, 180));
+          const alternativeAudio = new Audio(alternativeUrl);
+          alternativeAudio.play().then(function () {
+            pushDebug("audio.play alt success");
+          }).catch(function (altError) {
+            pushDebug(
+              "audio.play alt failed: " +
+                String(altError && altError.message ? altError.message : altError)
+            );
+
+            pendingNativeAudioFallback = {
+              word: String(word || ""),
+              lang: String(lang || ""),
+              createdAt: Date.now(),
+            };
+
+            if (!requestNativeAudioPlayback(alternativeUrl)) {
+              fallbackSpeech();
+              pendingNativeAudioFallback = null;
+            }
+          });
+          return;
+        }
+
+        pendingNativeAudioFallback = {
+          word: String(word || ""),
+          lang: String(lang || ""),
+          createdAt: Date.now(),
+        };
+        if (!requestNativeAudioPlayback(audioUrl)) {
+          fallbackSpeech();
+          pendingNativeAudioFallback = null;
         }
       });
       return;
     }
 
-    if (window.speechSynthesis && word) {
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(word));
-    }
+    pushDebug("audio.play no-url -> speech fallback");
+    fallbackSpeech();
   }
 
   function maybeAutoPlayAudio(data) {
@@ -599,12 +720,20 @@
     }
 
     if (data.type === "lookup") {
-      playAudio(String(data.audio_url || ""), String(data.word || ""));
+      playAudio(
+        String(data.audio_url || ""),
+        String(data.word || ""),
+        String(data.audio_lang || settingsState.languages.source_language || "")
+      );
       return;
     }
 
     if (data.type === "translate") {
-      playAudio("", String(data.original || ""));
+      playAudio(
+        String(data.audio_url || ""),
+        String(data.original || ""),
+        String(data.audio_lang || settingsState.languages.source_language || "")
+      );
     }
   }
 
@@ -615,7 +744,8 @@
 
     return meanings
       .map(function (meaning) {
-        const part = escapeHtml(meaning.partOfSpeech || "unknown");
+        const rawPart = String(meaning.partOfSpeech || "").trim();
+        const part = rawPart && rawPart.toLowerCase() !== "unknown" ? escapeHtml(rawPart) : "";
         const defs = Array.isArray(meaning.definitions) ? meaning.definitions : [];
         const defsHtml = defs
           .map(function (item) {
@@ -632,9 +762,11 @@
 
         return (
           '<div class="apl-meaning">' +
-          '<div class="apl-pos">' +
-          part +
-          "</div>" +
+          (part
+            ? '<div class="apl-pos">' +
+              part +
+              "</div>"
+            : "") +
           defsHtml +
           "</div>"
         );
@@ -646,7 +778,11 @@
     if (!Array.isArray(meanings) || meanings.length === 0) {
       return "";
     }
-    return escapeHtml(meanings[0].partOfSpeech || "");
+    const first = String((meanings[0] || {}).partOfSpeech || "").trim();
+    if (!first || first.toLowerCase() === "unknown") {
+      return "";
+    }
+    return escapeHtml(first);
   }
 
   function firstDefinitionText(meanings) {
@@ -689,6 +825,8 @@
     if (data && data.type === "translate") {
       const original = escapeHtml(data.original || "");
       const translated = escapeHtml(data.translated || "");
+      const audio = escapeHtml(data.audio_url || "");
+      const audioLang = escapeHtml(data.audio_lang || settingsState.languages.source_language || "");
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
       return (
         '<div class="apl-body apl-translate-compact">' +
@@ -698,7 +836,11 @@
         "</div>" +
         '<button class="apl-button apl-audio" type="button" data-word="' +
         original +
-        '" data-audio=""' +
+        '" data-audio="' +
+        audio +
+        '" data-lang="' +
+        audioLang +
+        '"' +
         audioDisabled +
         ">Audio</button>" +
         "</div>" +
@@ -713,6 +855,7 @@
       const word = escapeHtml(data.word || "");
       const phonetic = escapeHtml(data.phonetic || "");
       const audio = escapeHtml(data.audio_url || "");
+      const audioLang = escapeHtml(data.audio_lang || settingsState.languages.source_language || "");
       const meanings = data.meanings || [];
       const translated = escapeHtml(data.translated || "");
       const englishDefinition = firstDefinitionText(meanings);
@@ -737,6 +880,8 @@
         word +
         '" data-audio="' +
         audio +
+        '" data-lang="' +
+        audioLang +
         '"' +
         audioDisabled +
         ' aria-label="Play audio">🔊</button>' +
@@ -816,14 +961,61 @@
       return;
     }
 
+    if (data.type === "audio_native_result") {
+      const ok = Boolean(data.ok);
+      pushDebug(
+        "audio.native result ok=" +
+          (ok ? "yes" : "no") +
+          " message=" +
+          String(data.message || "")
+      );
+      if (!ok && pendingNativeAudioFallback) {
+        const fallbackAge = Date.now() - Number(pendingNativeAudioFallback.createdAt || 0);
+        if (fallbackAge <= 10000) {
+          playAudio(
+            "",
+            String(pendingNativeAudioFallback.word || ""),
+            String(pendingNativeAudioFallback.lang || "")
+          );
+        }
+        pendingNativeAudioFallback = null;
+      }
+      if (ok) {
+        pendingNativeAudioFallback = null;
+      }
+      if (!ok) {
+        ensureDebugPanelVisible();
+      }
+      return;
+    }
+
     if (data.type === "settings_error") {
       settingsMessage = String(data.message || "Co loi xay ra.");
       renderSettingsModal();
       return;
     }
 
+    if (
+      data.type === "error" &&
+      activeCommandMeta &&
+      activeCommandMeta.commandType === "lookup" &&
+      activeCommandMeta.auto_lookup_fallback &&
+      !activeCommandMeta.fallback_attempted
+    ) {
+      activeCommandMeta.fallback_attempted = true;
+      showPopover(activeCommandMeta.anchor.x, activeCommandMeta.anchor.y, {
+        loading: true,
+        word: activeCommandMeta.text,
+      });
+      sendCommand("translate", activeCommandMeta.text, activeCommandMeta.anchor, {
+        auto_lookup_fallback: false,
+      });
+      return;
+    }
+
     pushDebug("Nhan response tu Python: " + JSON.stringify(data));
     pendingCommandToken += 1;
+    activeCommandMeta = null;
 
     if (!popoverEl) {
       showPopover(lastAnchor.x, lastAnchor.y, data);
@@ -1179,19 +1371,28 @@
   }
 
   function languageSelectHtml(selectClass, selectedCode, includeAutoDetect) {
-    const options = SUPPORTED_LANGUAGES.filter(function (item) {
-      if (includeAutoDetect) {
-        return true;
-      }
-      return item.code !== "auto";
-    })
+    const hasSelectedCode = SUPPORTED_LANGUAGES.some(function (item) {
+      return item.code === selectedCode;
+    });
+    const canSelectAutoDetect = includeAutoDetect && selectedCode === AUTO_DETECT_LANGUAGE.code;
+    const resolvedSelectedCode = hasSelectedCode ? selectedCode : canSelectAutoDetect ? AUTO_DETECT_LANGUAGE.code : "en";
+
+    const autoDetectOption = includeAutoDetect
+      ? '<option value="' + AUTO_DETECT_LANGUAGE.code + '"' +
+        (resolvedSelectedCode === AUTO_DETECT_LANGUAGE.code ? " selected" : "") +
+        ">" +
+        escapeHtml(AUTO_DETECT_LANGUAGE.label) +
+        "</option>"
+      : "";
+
+    const options = SUPPORTED_LANGUAGES
       .map(function (item) {
-        const selected = item.code === selectedCode ? " selected" : "";
+        const selected = item.code === resolvedSelectedCode ? " selected" : "";
         return '<option value="' + escapeHtml(item.code) + '"' + selected + ">" + escapeHtml(item.label) + "</option>";
       })
       .join("");
 
-    return '<select class="' + selectClass + '">' + options + "</select>";
+    return '<select class="' + selectClass + '">' + autoDetectOption + options + "</select>";
   }
 
   function triggerModeChecked(mode) {
@@ -1534,14 +1735,24 @@
     }
   }
 
-  function sendCommand(commandType, text, anchor) {
+  function sendCommand(commandType, text, anchor, options) {
     pendingCommandToken += 1;
+    const commandToken = pendingCommandToken;
     const resolvedAnchor = anchor || lastAnchor;
     lastAnchor = { x: resolvedAnchor.x || lastAnchor.x, y: resolvedAnchor.y || lastAnchor.y };
+    activeCommandMeta = {
+      token: commandToken,
+      commandType: commandType,
+      text: text,
+      anchor: { x: lastAnchor.x, y: lastAnchor.y },
+      auto_lookup_fallback: Boolean(options && options.auto_lookup_fallback),
+      fallback_attempted: false,
+    };
 
     const payload = commandType + ":" + encodeURIComponent(text);
     const sent = sendPycmd(payload);
     if (!sent) {
+      activeCommandMeta = null;
       showPopover(lastAnchor.x, lastAnchor.y, {
         type: "error",
         message: "Khong goi duoc pycmd.",
@@ -1554,16 +1765,10 @@
 
   function buildSelectionAction(text, anchor) {
     const wordCount = getWordCount(text);
+    const sourceIsAuto = settingsState.languages.source_language === "auto";
+    const shouldUseTranslate = wordCount > 1;
 
-    if (wordCount === 1 && !toolSettings.enable_lookup) {
-      showPopover(anchor.x, anchor.y, {
-        type: "error",
-        message: "Tinh nang tra tu dang tat trong Settings.",
-      });
-      return null;
-    }
-
-    if (wordCount > 1 && !toolSettings.enable_translate) {
+    if (shouldUseTranslate && !toolSettings.enable_translate) {
       showPopover(anchor.x, anchor.y, {
         type: "error",
         message: "Tinh nang dich doan dang tat trong Settings.",
@@ -1571,10 +1776,45 @@
       return null;
     }
 
+    if (!shouldUseTranslate && sourceIsAuto) {
+      if (toolSettings.enable_lookup) {
+        return {
+          commandType: "lookup",
+          text: text,
+          anchor: anchor,
+          auto_lookup_fallback: toolSettings.enable_translate,
+        };
+      }
+
+      if (toolSettings.enable_translate) {
+        return {
+          commandType: "translate",
+          text: text,
+          anchor: anchor,
+          auto_lookup_fallback: false,
+        };
+      }
+
+      showPopover(anchor.x, anchor.y, {
+        type: "error",
+        message: "Tinh nang tra tu va dich dang tat trong Settings.",
+      });
+      return null;
+    }
+
+    if (!shouldUseTranslate && !toolSettings.enable_lookup) {
+      showPopover(anchor.x, anchor.y, {
+        type: "error",
+        message: "Tinh nang tra tu dang tat trong Settings.",
+      });
+      return null;
+    }
+
     return {
-      commandType: wordCount === 1 ? "lookup" : "translate",
+      commandType: shouldUseTranslate ? "translate" : "lookup",
       text: text,
       anchor: anchor,
+      auto_lookup_fallback: false,
     };
   }
 
@@ -1584,7 +1824,9 @@
     }
 
     showPopover(action.anchor.x, action.anchor.y, { loading: true, word: action.text });
-    sendCommand(action.commandType, action.text, action.anchor);
+    sendCommand(action.commandType, action.text, action.anchor, {
+      auto_lookup_fallback: Boolean(action.auto_lookup_fallback),
+    });
   }
 
   function keyFromEvent(event) {

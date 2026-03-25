@@ -19,10 +19,39 @@ try:
 except ImportError:
     from services import translation_service
 
+try:
+    from ...services import tts_service
+except ImportError:
+    from services import tts_service
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "show_example": True,
     "max_definitions": 3,
+    "source_language": "en",
+    "target_language": "vi",
 }
+
+SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh-CN", "ja", "ko", "ru", "fi", "de", "vi"}
+SUPPORTED_TARGET_LANGUAGES = {"en", "zh-CN", "ja", "ko", "ru", "fi", "de", "vi"}
+
+
+def _normalize_source_language(value: object) -> str:
+    code = str(value or "").strip()
+    return code if code in SUPPORTED_SOURCE_LANGUAGES else "en"
+
+
+def _normalize_target_language(value: object) -> str:
+    code = str(value or "").strip()
+    return code if code in SUPPORTED_TARGET_LANGUAGES else "vi"
+
+
+def _normalize_detected_language(value: str) -> str:
+    detected = str(value or "").strip()
+    if detected.lower().startswith("zh"):
+        return "zh-CN"
+    if detected in {"en", "ja", "ko", "ru", "fi", "de", "vi"}:
+        return detected
+    return "en"
 
 
 def _load_config() -> dict[str, Any]:
@@ -47,9 +76,19 @@ def handle_lookup(word: str) -> dict[str, Any]:
         return {"type": "error", "message": "Khong co tu de tra."}
 
     config = _load_config()
+    source_language = _normalize_source_language(config.get("source_language"))
+    target_language = _normalize_target_language(config.get("target_language"))
+    lookup_language = source_language
+
+    if source_language == "auto":
+        try:
+            detected_language = translation_service.detect_language(normalized)
+            lookup_language = _normalize_detected_language(detected_language)
+        except Exception:
+            lookup_language = "en"
 
     try:
-        raw_data = dictionary_api.fetch_definition(normalized)
+        raw_data = dictionary_api.fetch_definition(normalized, source_language=lookup_language)
         parsed = parse_response(raw_data, max_definitions=int(config["max_definitions"]))
 
         if not bool(config.get("show_example", True)):
@@ -61,16 +100,21 @@ def handle_lookup(word: str) -> dict[str, Any]:
             return {"type": "error", "message": "Khong tim thay tu nay."}
 
         try:
-            translated = translation_service.translate_text(normalized, "en", "vi")
+            translated = translation_service.translate_text(normalized, lookup_language, target_language)
         except Exception:
-            translated = "Khong the dich nghia tieng Viet luc nay."
+            translated = "Khong the dich nghia luc nay."
+
+        audio_url = str(parsed.get("audio_url") or "").strip()
+        if not audio_url:
+            audio_url = tts_service.build_google_tts_url(parsed.get("word") or normalized, lookup_language)
 
         return {
             "type": "lookup",
             "word": parsed.get("word") or normalized,
             "translated": translated,
             "phonetic": parsed.get("phonetic") or "",
-            "audio_url": parsed.get("audio_url") or "",
+            "audio_url": audio_url,
+            "audio_lang": lookup_language,
             "meanings": parsed.get("meanings") or [],
         }
     except LookupError:

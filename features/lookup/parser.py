@@ -33,7 +33,7 @@ def parse_response(data: list[dict[str, Any]], max_definitions: int = 3) -> dict
     for meaning in meanings:
         if not isinstance(meaning, dict):
             continue
-        part_of_speech = str(meaning.get("partOfSpeech") or "").strip() or "unknown"
+        part_of_speech = str(meaning.get("partOfSpeech") or "").strip()
 
         definitions_output: list[dict[str, str]] = []
         raw_definitions = meaning.get("definitions") or []

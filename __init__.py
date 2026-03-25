@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import importlib
 import sys
+import hashlib
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
+from urllib.request import Request, urlopen
 
 from aqt import gui_hooks, mw
 
@@ -14,7 +17,7 @@ ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
 ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
 ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
-ASSET_VERSION = "20260325a"
+ASSET_VERSION = "20260325e"
 ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
 
@@ -301,6 +304,111 @@ def _run_translate_message(phrase: str, context: object) -> None:
     _send_to_webview(context, result)
 
 
+def _run_audio_message(audio_url: str, context: object) -> None:
+    ok, message = _play_audio_url_native(audio_url)
+    _send_to_webview(
+        context,
+        {
+            "type": "audio_native_result",
+            "ok": ok,
+            "message": message,
+            "audio_url": audio_url,
+        },
+    )
+
+
+def _play_audio_url_native(audio_url: str) -> tuple[bool, str]:
+    url = str(audio_url or "").strip()
+    if not url:
+        return (False, "missing audio url")
+
+    try:
+        request = Request(url, headers={"User-Agent": "anki-popup-lookup/1.0"})
+        with urlopen(request, timeout=12) as response:
+            payload = response.read()
+            content_type = str(response.headers.get("Content-Type", "")).lower()
+    except Exception as error:
+        return (False, f"download failed: {error}")
+
+    if not payload:
+        return (False, "downloaded payload is empty")
+
+    extension = ".mp3"
+    parsed_path = urlsplit(url).path
+    suffix = Path(parsed_path).suffix.lower()
+    if suffix in {".mp3", ".ogg", ".oga", ".wav"}:
+        extension = suffix
+    elif "ogg" in content_type:
+        extension = ".ogg"
+    elif "wav" in content_type:
+        extension = ".wav"
+
+    temp_dir = ADDON_DIR / "_tmp_audio"
+    try:
+        temp_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as error:
+        return (False, f"cannot create temp dir: {error}")
+
+    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:20]
+    audio_path = temp_dir / f"apl_tts_{digest}{extension}"
+
+    try:
+        audio_path.write_bytes(payload)
+    except Exception as error:
+        return (False, f"cannot write audio file: {error}")
+
+    try:
+        from aqt import sound as aqt_sound
+    except Exception as error:
+        return (False, f"cannot import aqt.sound: {error}")
+
+    av_player = getattr(aqt_sound, "av_player", None)
+    play_fn = getattr(aqt_sound, "play", None)
+
+    def _play_with_av_player() -> bool:
+        if av_player is None or not hasattr(av_player, "play_file"):
+            return False
+        av_player.play_file(str(audio_path))
+        return True
+
+    def _play_with_function() -> bool:
+        if not callable(play_fn):
+            return False
+        play_fn(str(audio_path))
+        return True
+
+    def _play_on_main() -> tuple[bool, str]:
+        try:
+            if _play_with_av_player():
+                return (True, f"native av_player {audio_path.name}")
+            if _play_with_function():
+                return (True, f"native play() {audio_path.name}")
+            return (False, "no native playback API available")
+        except Exception as error:
+            return (False, f"native playback failed: {error}")
+
+    taskman = getattr(mw, "taskman", None)
+    if taskman is None:
+        return _play_on_main()
+
+    holder: dict[str, object] = {"result": (False, "unknown")}
+    done = threading.Event()
+
+    def _runner() -> None:
+        try:
+            holder["result"] = _play_on_main()
+        finally:
+            done.set()
+
+    taskman.run_on_main(_runner)
+    if not done.wait(timeout=10):
+        return (False, "native playback timeout")
+    result = holder.get("result")
+    if isinstance(result, tuple) and len(result) == 2:
+        return result  # type: ignore[return-value]
+    return (False, "native playback result unavailable")
+
+
 def on_js_message(handled, message: str, context):
     if message == "settings:get":
         _send_to_webview(context, _build_settings_payload())
@@ -370,6 +478,11 @@ def on_js_message(handled, message: str, context):
     if message.startswith("translate:"):
         phrase = unquote(message[10:]).strip()
         _MESSAGE_EXECUTOR.submit(_run_translate_message, phrase, context)
+        return (True, None)
+
+    if message.startswith("audio:play:"):
+        audio_url = unquote(message[len("audio:play:") :]).strip()
+        _MESSAGE_EXECUTOR.submit(_run_audio_message, audio_url, context)
         return (True, None)
 
     return handled

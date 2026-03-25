@@ -5,6 +5,8 @@ import importlib
 import sys
 import hashlib
 import threading
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -39,7 +41,83 @@ DEFAULT_RUNTIME_SETTINGS = {
     "popover_shortcut": "Alt+1",
 }
 
+INSTALL_PING_URL = "https://langohung.me/api/ping/dictover"
+INSTALL_PING_MARKER = ADDON_DIR / ".install_ping_v1.json"
+
 _MESSAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="apl-worker")
+
+
+def _write_install_ping_marker(payload: dict[str, object]) -> None:
+    marker_tmp = INSTALL_PING_MARKER.with_suffix(".json.tmp")
+    marker_tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    marker_tmp.replace(INSTALL_PING_MARKER)
+
+
+def _send_install_ping_once(marker_payload: dict[str, object]) -> None:
+    payload = {
+        "event": "install",
+        "addon_module": ADDON_MODULE,
+        "addon_web_id": str(ADDON_WEB_ID),
+        "install_id": str(marker_payload.get("install_id", "")),
+        "created_at": int(marker_payload.get("created_at", 0) or 0),
+        "sent_at": int(time.time()),
+    }
+
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = Request(
+        INSTALL_PING_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "anki-popup-lookup-install-ping/1.0",
+        },
+        method="POST",
+    )
+
+    ok = False
+    status = 0
+    error_message = ""
+    try:
+        with urlopen(request, timeout=8) as response:
+            status = int(getattr(response, "status", 200) or 200)
+            ok = 200 <= status < 300
+    except Exception as error:
+        error_message = str(error)
+
+    marker_payload["sent_at"] = int(time.time())
+    marker_payload["status"] = "ok" if ok else "error"
+    marker_payload["http_status"] = status
+    marker_payload["error"] = error_message
+
+    try:
+        _write_install_ping_marker(marker_payload)
+    except Exception as error:
+        print(f"[{ADDON_MODULE}] Cannot update install ping marker: {error}")
+
+
+def _ensure_install_ping_once() -> None:
+    if INSTALL_PING_MARKER.exists():
+        return
+
+    marker_payload: dict[str, object] = {
+        "version": 1,
+        "install_id": uuid.uuid4().hex,
+        "created_at": int(time.time()),
+        "status": "pending",
+    }
+
+    try:
+        _write_install_ping_marker(marker_payload)
+    except Exception as error:
+        print(f"[{ADDON_MODULE}] Cannot create install ping marker: {error}")
+        return
+
+    threading.Thread(
+        target=_send_install_ping_once,
+        args=(marker_payload,),
+        name="apl-install-ping",
+        daemon=True,
+    ).start()
 
 
 def _get_runtime_config() -> dict:
@@ -608,3 +686,4 @@ def on_js_message(handled, message: str, context):
 gui_hooks.card_will_show.append(on_card_show)
 gui_hooks.webview_will_set_content.append(on_webview_will_set_content)
 gui_hooks.webview_did_receive_js_message.append(on_js_message)
+_ensure_install_ping_once()

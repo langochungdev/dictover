@@ -82,6 +82,7 @@
     closed: "▸",
     open: "▾",
   };
+  const DEBUG_PANEL_ALWAYS_VISIBLE = true;
 
   function now() {
     return new Date().toLocaleTimeString();
@@ -1043,6 +1044,18 @@
       shortcut_combo: normalizeShortcutCombo(incomingSettings.popover_shortcut || DEFAULT_SHORTCUT_COMBO),
       auto_play_audio: Boolean(incomingSettings.auto_play_audio),
     };
+    pushDebug(
+      "settings_state recv src=" +
+        incomingState.source_language +
+        " tgt=" +
+        incomingState.target_language +
+        " mode=" +
+        incomingState.trigger_mode +
+        " shortcut=" +
+        incomingState.shortcut_combo +
+        " autoPlay=" +
+        String(incomingState.auto_play_audio)
+    );
 
     if (settingsSaveGuardSnapshot && nowTs <= settingsSaveGuardUntil) {
       const mismatch =
@@ -1089,7 +1102,9 @@
 
     settingsLoaded = true;
 
-    if (!syncSettingsFormIfOpen()) {
+    if (settingsModalEl && !settingsModalEl.classList.contains("apl-settings-root--hidden")) {
+      syncSettingsFormIfOpen();
+    } else if (settingsModalEl) {
       renderSettingsModal();
     }
   }
@@ -1108,10 +1123,23 @@
 
     settingsRequestPending = true;
     settingsLastRequestedAt = nowTs;
+    pushDebug("settings:get sent force=" + String(Boolean(force)));
     sendPycmd("settings:get");
   }
 
   function saveSettings() {
+    pushDebug(
+      "settings:save sent src=" +
+        settingsState.languages.source_language +
+        " tgt=" +
+        settingsState.languages.target_language +
+        " mode=" +
+        settingsState.popover.trigger_mode +
+        " shortcut=" +
+        settingsState.popover.shortcut_combo +
+        " autoPlay=" +
+        String(Boolean(settingsState.popover.auto_play_audio))
+    );
     const payload = encodeURIComponent(
       JSON.stringify({
         enable_lookup: toolSettings.enable_lookup,
@@ -1595,6 +1623,12 @@
     }
     if (autoPlayInput) {
       autoPlayInput.checked = settingsState.popover.auto_play_audio;
+      pushDebug(
+        "syncSettingsFormIfOpen autoPlay state=" +
+          String(settingsState.popover.auto_play_audio) +
+          " uiChecked=" +
+          String(Boolean(autoPlayInput.checked))
+      );
     }
     if (autoMode) {
       autoMode.checked = settingsState.popover.trigger_mode === "auto";
@@ -1680,7 +1714,22 @@
       input.addEventListener("change", function () {
         const values = readSettingsFormValues();
         applySettingsFormValues(values);
-        renderSettingsModal();
+
+        const shortcutGroup = settingsModalEl.querySelector(".apl-settings-shortcut-group");
+        if (shortcutGroup) {
+          if (settingsState.popover.trigger_mode === "shortcut") {
+            shortcutGroup.classList.remove("apl-settings-shortcut-group--hidden");
+          } else {
+            shortcutGroup.classList.add("apl-settings-shortcut-group--hidden");
+          }
+        }
+
+        pushDebug(
+          "trigger_mode changed -> " +
+            settingsState.popover.trigger_mode +
+            " keep autoPlay=" +
+            String(settingsState.popover.auto_play_audio)
+        );
         persistSettingsNow();
       });
     });
@@ -1717,13 +1766,16 @@
       document.body.appendChild(settingsModalEl);
     }
 
-    if (!settingsModalWarm) {
-      if (!syncSettingsFormIfOpen()) {
-        renderSettingsModal();
-      }
-    }
+    // Always rebuild modal from current state to avoid stale checkbox DOM.
+    renderSettingsModal();
 
     settingsModalEl.classList.remove("apl-settings-root--hidden");
+    syncSettingsFormIfOpen();
+    pushDebug(
+      "openSettingsModal autoPlay state=" +
+        String(settingsState.popover.auto_play_audio)
+    );
+
     if (!settingsLoaded) {
       requestSettings(true);
     }
@@ -1975,6 +2027,11 @@
   window.setTimeout(function () {
     requestSettings(true);
   }, 350);
+
+  if (DEBUG_PANEL_ALWAYS_VISIBLE) {
+    ensureDebugPanelVisible();
+    pushDebug("Debug panel auto-opened for startup tracing.");
+  }
 
   pushDebug("popup.js da duoc load.");
 

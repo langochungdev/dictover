@@ -62,6 +62,25 @@ def _normalize_shortcut(value: object) -> str:
     return shortcut or str(DEFAULT_RUNTIME_SETTINGS["popover_shortcut"])
 
 
+def _coerce_bool(value: object, default: bool) -> bool:
+    if value is None:
+        return bool(default)
+
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off", ""}:
+        return False
+
+    return bool(default)
+
+
 def _load_raw_config_file() -> dict[str, object]:
     config_path = ADDON_DIR / "config.json"
     if not config_path.exists():
@@ -78,22 +97,48 @@ def _load_raw_config_file() -> dict[str, object]:
     return payload
 
 
+def _write_raw_config_file(payload: dict[str, object]) -> None:
+    config_path = ADDON_DIR / "config.json"
+    temp_path = config_path.with_suffix(".json.tmp")
+
+    serialized = json.dumps(payload, ensure_ascii=False, indent=2)
+    temp_path.write_text(serialized, encoding="utf-8")
+    try:
+        temp_path.replace(config_path)
+    except Exception:
+        # Fallback for intermittent Windows replace/lock issues.
+        config_path.write_text(serialized, encoding="utf-8")
+        if temp_path.exists():
+            temp_path.unlink()
+
+
 def _runtime_settings_from_config(config: dict) -> dict[str, object]:
     raw_config_file = _load_raw_config_file()
 
     def _get_value(key: str):
+        # Keep config.json as source of truth for persisted runtime settings.
+        if key in raw_config_file:
+            return raw_config_file.get(key)
         if key in config:
             return config.get(key)
-        return raw_config_file.get(key)
+        return None
 
     return {
-        "enable_lookup": bool(_get_value("enable_lookup") if _get_value("enable_lookup") is not None else DEFAULT_RUNTIME_SETTINGS["enable_lookup"]),
-        "enable_translate": bool(
-            _get_value("enable_translate") if _get_value("enable_translate") is not None else DEFAULT_RUNTIME_SETTINGS["enable_translate"]
+        "enable_lookup": _coerce_bool(
+            _get_value("enable_lookup"),
+            bool(DEFAULT_RUNTIME_SETTINGS["enable_lookup"]),
         ),
-        "enable_audio": bool(_get_value("enable_audio") if _get_value("enable_audio") is not None else DEFAULT_RUNTIME_SETTINGS["enable_audio"]),
-        "auto_play_audio": bool(
-            _get_value("auto_play_audio") if _get_value("auto_play_audio") is not None else DEFAULT_RUNTIME_SETTINGS["auto_play_audio"]
+        "enable_translate": _coerce_bool(
+            _get_value("enable_translate"),
+            bool(DEFAULT_RUNTIME_SETTINGS["enable_translate"]),
+        ),
+        "enable_audio": _coerce_bool(
+            _get_value("enable_audio"),
+            bool(DEFAULT_RUNTIME_SETTINGS["enable_audio"]),
+        ),
+        "auto_play_audio": _coerce_bool(
+            _get_value("auto_play_audio"),
+            bool(DEFAULT_RUNTIME_SETTINGS["auto_play_audio"]),
         ),
         "popover_trigger_mode": _normalize_trigger_mode(
             _get_value("popover_trigger_mode")
@@ -108,13 +153,16 @@ def _runtime_settings_from_config(config: dict) -> dict[str, object]:
     }
 
 
+def _runtime_settings_from_file_only() -> dict[str, object]:
+    return _runtime_settings_from_config({})
+
+
 def _save_runtime_settings(partial_settings: dict[str, object]) -> dict[str, object]:
-    config = _get_runtime_config()
-    merged = _runtime_settings_from_config(config)
+    merged = _runtime_settings_from_file_only()
 
     for key in ["enable_lookup", "enable_translate", "enable_audio", "auto_play_audio"]:
         if key in partial_settings:
-            merged[key] = bool(partial_settings[key])
+            merged[key] = _coerce_bool(partial_settings[key], bool(merged[key]))
 
     if "popover_trigger_mode" in partial_settings:
         merged["popover_trigger_mode"] = _normalize_trigger_mode(
@@ -124,19 +172,12 @@ def _save_runtime_settings(partial_settings: dict[str, object]) -> dict[str, obj
     if "popover_shortcut" in partial_settings:
         merged["popover_shortcut"] = _normalize_shortcut(partial_settings["popover_shortcut"])
 
-    config.update(merged)
-    try:
-        mw.addonManager.writeConfig(__name__, config)
-    except Exception as error:
-        print(f"[{ADDON_MODULE}] Cannot save runtime settings: {error}")
-
     return merged
 
 
 def _build_settings_payload() -> dict:
-    config = _get_runtime_config()
     translation = _load_translation_config()
-    settings = _runtime_settings_from_config(config)
+    settings = _runtime_settings_from_file_only()
 
     return {
         "type": "settings_state",
@@ -171,31 +212,18 @@ def _load_translation_config() -> dict[str, str]:
 
 
 def _save_translation_config(source_language: str, target_language: str) -> None:
-    config_path = ADDON_DIR / "config.json"
-
-    current_payload: dict[str, object] = {}
-    if config_path.exists():
-        try:
-            loaded = json.loads(config_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                current_payload = loaded
-        except Exception:
-            current_payload = {}
+    current_payload = _load_raw_config_file()
 
     current_payload["source_language"] = str(source_language or "en")
     current_payload["target_language"] = str(target_language or "vi")
 
     try:
-        config_path.write_text(
-            json.dumps(current_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _write_raw_config_file(current_payload)
     except Exception as error:
         print(f"[{ADDON_MODULE}] Cannot save translation config: {error}")
 
 
 def _save_runtime_settings_to_config_file(runtime_settings: dict[str, object]) -> None:
-    config_path = ADDON_DIR / "config.json"
     payload = _load_raw_config_file()
 
     for key in DEFAULT_RUNTIME_SETTINGS:
@@ -203,12 +231,43 @@ def _save_runtime_settings_to_config_file(runtime_settings: dict[str, object]) -
             payload[key] = runtime_settings[key]
 
     try:
-        config_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _write_raw_config_file(payload)
     except Exception as error:
         print(f"[{ADDON_MODULE}] Cannot mirror runtime settings to config file: {error}")
+
+
+def _save_all_settings_to_config_file(
+    runtime_settings: dict[str, object],
+    source_language: str | None,
+    target_language: str | None,
+) -> tuple[bool, str]:
+    payload = _load_raw_config_file()
+
+    if source_language is not None:
+        payload["source_language"] = str(source_language or "en")
+    if target_language is not None:
+        payload["target_language"] = str(target_language or "vi")
+
+    for key in DEFAULT_RUNTIME_SETTINGS:
+        if key in runtime_settings:
+            payload[key] = runtime_settings[key]
+
+    try:
+        _write_raw_config_file(payload)
+        return (True, "")
+    except Exception as error:
+        message = f"Cannot save combined settings to config file: {error}"
+        print(f"[{ADDON_MODULE}] {message}")
+        return (False, message)
+
+
+def _save_runtime_settings_to_addon_config(runtime_settings: dict[str, object]) -> None:
+    config = _get_runtime_config()
+    config.update(runtime_settings)
+    try:
+        mw.addonManager.writeConfig(__name__, config)
+    except Exception as error:
+        print(f"[{ADDON_MODULE}] Cannot mirror runtime settings to addon config: {error}")
 
 
 def _send_to_webview(context: object, payload: dict) -> None:
@@ -446,20 +505,55 @@ def on_js_message(handled, message: str, context):
             )
             return (True, None)
 
+        source_language: str | None = None
+        target_language: str | None = None
         incoming_languages = payload.get("languages", {})
         if isinstance(incoming_languages, dict):
             source_language = str(incoming_languages.get("source_language", "en") or "en")
             target_language = str(incoming_languages.get("target_language", "vi") or "vi")
-            _save_translation_config(source_language, target_language)
 
         saved_settings = _save_runtime_settings(payload)
-        _save_runtime_settings_to_config_file(saved_settings)
+        saved_ok, save_message = _save_all_settings_to_config_file(
+            saved_settings,
+            source_language,
+            target_language,
+        )
+        _save_runtime_settings_to_addon_config(saved_settings)
+
+        if not saved_ok:
+            _send_to_webview(
+                context,
+                {
+                    "type": "settings_error",
+                    "message": "Khong the luu settings vao file config.json.",
+                },
+            )
+
+        persisted_payload = _build_settings_payload()
+        persisted_settings = persisted_payload.get("settings", {}) if isinstance(persisted_payload, dict) else {}
+        persisted_auto = False
+        if isinstance(persisted_settings, dict):
+            persisted_auto = bool(persisted_settings.get("auto_play_audio", False))
+
+        expected_auto = bool(saved_settings.get("auto_play_audio", False))
+        if persisted_auto != expected_auto:
+            _send_to_webview(
+                context,
+                {
+                    "type": "settings_error",
+                    "message": "Luu auto play khong khop voi gia tri mong doi. Vui long thu lai.",
+                },
+            )
+
+        if not saved_ok and save_message:
+            print(f"[{ADDON_MODULE}] save details: {save_message}")
+
         _send_to_webview(
             context,
             {
                 "type": "settings_state",
-                "settings": saved_settings,
-                "languages": _load_translation_config(),
+                "settings": persisted_payload.get("settings", {}),
+                "languages": persisted_payload.get("languages", _load_translation_config()),
                 "resources": {
                     "mode": "api_only",
                     "status_unknown": False,

@@ -604,15 +604,6 @@
         const audioUrl = audioButton.getAttribute("data-audio") || "";
         const word = audioButton.getAttribute("data-word") || "";
         const lang = audioButton.getAttribute("data-lang") || "";
-        pushDebug(
-          "audio.click lang=" +
-            (lang || "") +
-            " hasUrl=" +
-            (audioUrl ? "yes" : "no") +
-            " word=" +
-            shortenForLog(word, 80)
-        );
-        ensureDebugPanelVisible();
         playAudio(audioUrl, word, lang);
       });
     }
@@ -1219,11 +1210,20 @@
   }
 
   function ensureSettingsTrigger() {
+    if (window.__aplIsDeckBrowser !== true) {
+      const staleButtons = document.querySelectorAll(".apl-settings-trigger");
+      staleButtons.forEach(function (button) {
+        button.remove();
+      });
+      settingsTriggerEl = null;
+      return;
+    }
+
     let isTopWindow = false;
     try {
       isTopWindow = window.top === window;
     } catch (error) {
-      isTopWindow = true;
+      isTopWindow = false;
     }
 
     if (!isTopWindow) {
@@ -1414,14 +1414,8 @@
         : "apl-settings-shortcut-group apl-settings-shortcut-group--hidden";
 
     settingsModalEl.innerHTML =
-      '<div class="apl-settings-overlay" role="dialog" aria-modal="true" aria-labelledby="apl-settings-title">' +
+      '<div class="apl-settings-overlay" role="dialog" aria-modal="true">' +
       '<div class="apl-settings-modal">' +
-      '<div class="apl-settings-header">' +
-      '<div class="apl-settings-title-wrap">' +
-      '<h3 class="apl-settings-title" id="apl-settings-title">Cài đặt</h3>' +
-      "</div>" +
-      '<button class="apl-close apl-settings-close" type="button" aria-label="Đóng">x</button>' +
-      "</div>" +
       '<div class="apl-settings-section">' +
       '<div class="apl-settings-section-title">Ngôn ngữ</div>' +
       '<div class="apl-settings-language-row">' +

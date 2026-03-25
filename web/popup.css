@@ -468,6 +468,7 @@
 }
 
 .apl-settings-modal {
+    position: relative;
     width: min(520px, calc(100vw - 24px));
     max-height: min(84vh, 760px);
     overflow: auto;
@@ -508,6 +509,19 @@
     margin-top: 14px;
     border-top: 1px solid #edf1f7;
     padding-top: 12px;
+}
+
+.apl-settings-section:first-of-type {
+    margin-top: 0;
+    border-top: 0;
+    padding-top: 0;
+}
+
+.apl-settings-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1;
 }
 
 .apl-settings-section-title {

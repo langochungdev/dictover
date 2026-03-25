@@ -17,7 +17,7 @@ ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
 ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
 ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
-ASSET_VERSION = "20260325e"
+ASSET_VERSION = "20260325h"
 ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
 
@@ -247,11 +247,14 @@ def _send_to_webview(context: object, payload: dict) -> None:
 
 def on_card_show(html: str, card, context) -> str:
     css_tag = f"<link rel='stylesheet' href='{ASSET_CSS_PATH}'>"
+    context_flag_tag = "<script>window.__aplIsDeckBrowser=false;</script>"
     js_tag = f"<script src='{ASSET_JS_PATH}'></script>"
 
     output = html
     if css_tag not in output:
         output += css_tag
+    if context_flag_tag not in output:
+        output += context_flag_tag
     if js_tag not in output:
         output += js_tag
 
@@ -270,6 +273,11 @@ def on_webview_will_set_content(web_content, context) -> None:
     js_list = getattr(web_content, "js", None)
     if isinstance(js_list, list) and ASSET_JS_PATH not in js_list:
         js_list.append(ASSET_JS_PATH)
+
+    head_content = getattr(web_content, "head", None)
+    context_flag_tag = "<script>window.__aplIsDeckBrowser=true;</script>"
+    if isinstance(head_content, str) and context_flag_tag not in head_content:
+        web_content.head = head_content + context_flag_tag
 
 
 def _run_lookup_message(word: str, context: object) -> None:

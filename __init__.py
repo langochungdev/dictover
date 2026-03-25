@@ -14,7 +14,7 @@ ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
 ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
 ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
-ASSET_VERSION = "20260324e"
+ASSET_VERSION = "20260325a"
 ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
 
@@ -31,6 +31,9 @@ DEFAULT_RUNTIME_SETTINGS = {
     "enable_lookup": True,
     "enable_translate": True,
     "enable_audio": True,
+    "auto_play_audio": False,
+    "popover_trigger_mode": "auto",
+    "popover_shortcut": "Alt+1",
 }
 
 _MESSAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="apl-worker")
@@ -47,23 +50,76 @@ def _get_runtime_config() -> dict:
     return config
 
 
-def _runtime_settings_from_config(config: dict) -> dict[str, bool]:
+def _normalize_trigger_mode(value: object) -> str:
+    return "shortcut" if str(value).strip().lower() == "shortcut" else "auto"
+
+
+def _normalize_shortcut(value: object) -> str:
+    shortcut = str(value or "").strip()
+    return shortcut or str(DEFAULT_RUNTIME_SETTINGS["popover_shortcut"])
+
+
+def _load_raw_config_file() -> dict[str, object]:
+    config_path = ADDON_DIR / "config.json"
+    if not config_path.exists():
+        return {}
+
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    return payload
+
+
+def _runtime_settings_from_config(config: dict) -> dict[str, object]:
+    raw_config_file = _load_raw_config_file()
+
+    def _get_value(key: str):
+        if key in config:
+            return config.get(key)
+        return raw_config_file.get(key)
+
     return {
-        "enable_lookup": bool(config.get("enable_lookup", DEFAULT_RUNTIME_SETTINGS["enable_lookup"])),
+        "enable_lookup": bool(_get_value("enable_lookup") if _get_value("enable_lookup") is not None else DEFAULT_RUNTIME_SETTINGS["enable_lookup"]),
         "enable_translate": bool(
-            config.get("enable_translate", DEFAULT_RUNTIME_SETTINGS["enable_translate"])
+            _get_value("enable_translate") if _get_value("enable_translate") is not None else DEFAULT_RUNTIME_SETTINGS["enable_translate"]
         ),
-        "enable_audio": bool(config.get("enable_audio", DEFAULT_RUNTIME_SETTINGS["enable_audio"])),
+        "enable_audio": bool(_get_value("enable_audio") if _get_value("enable_audio") is not None else DEFAULT_RUNTIME_SETTINGS["enable_audio"]),
+        "auto_play_audio": bool(
+            _get_value("auto_play_audio") if _get_value("auto_play_audio") is not None else DEFAULT_RUNTIME_SETTINGS["auto_play_audio"]
+        ),
+        "popover_trigger_mode": _normalize_trigger_mode(
+            _get_value("popover_trigger_mode")
+            if _get_value("popover_trigger_mode") is not None
+            else DEFAULT_RUNTIME_SETTINGS["popover_trigger_mode"]
+        ),
+        "popover_shortcut": _normalize_shortcut(
+            _get_value("popover_shortcut")
+            if _get_value("popover_shortcut") is not None
+            else DEFAULT_RUNTIME_SETTINGS["popover_shortcut"]
+        ),
     }
 
 
-def _save_runtime_settings(partial_settings: dict[str, bool]) -> dict[str, bool]:
+def _save_runtime_settings(partial_settings: dict[str, object]) -> dict[str, object]:
     config = _get_runtime_config()
     merged = _runtime_settings_from_config(config)
 
-    for key in DEFAULT_RUNTIME_SETTINGS:
+    for key in ["enable_lookup", "enable_translate", "enable_audio", "auto_play_audio"]:
         if key in partial_settings:
             merged[key] = bool(partial_settings[key])
+
+    if "popover_trigger_mode" in partial_settings:
+        merged["popover_trigger_mode"] = _normalize_trigger_mode(
+            partial_settings["popover_trigger_mode"]
+        )
+
+    if "popover_shortcut" in partial_settings:
+        merged["popover_shortcut"] = _normalize_shortcut(partial_settings["popover_shortcut"])
 
     config.update(merged)
     try:
@@ -109,6 +165,47 @@ def _load_translation_config() -> dict[str, str]:
         "source_language": str(payload.get("source_language", defaults["source_language"])),
         "target_language": str(payload.get("target_language", defaults["target_language"])),
     }
+
+
+def _save_translation_config(source_language: str, target_language: str) -> None:
+    config_path = ADDON_DIR / "config.json"
+
+    current_payload: dict[str, object] = {}
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                current_payload = loaded
+        except Exception:
+            current_payload = {}
+
+    current_payload["source_language"] = str(source_language or "en")
+    current_payload["target_language"] = str(target_language or "vi")
+
+    try:
+        config_path.write_text(
+            json.dumps(current_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as error:
+        print(f"[{ADDON_MODULE}] Cannot save translation config: {error}")
+
+
+def _save_runtime_settings_to_config_file(runtime_settings: dict[str, object]) -> None:
+    config_path = ADDON_DIR / "config.json"
+    payload = _load_raw_config_file()
+
+    for key in DEFAULT_RUNTIME_SETTINGS:
+        if key in runtime_settings:
+            payload[key] = runtime_settings[key]
+
+    try:
+        config_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as error:
+        print(f"[{ADDON_MODULE}] Cannot mirror runtime settings to config file: {error}")
 
 
 def _send_to_webview(context: object, payload: dict) -> None:
@@ -233,8 +330,26 @@ def on_js_message(handled, message: str, context):
             )
             return (True, None)
 
-        _save_runtime_settings(payload)
-        _send_to_webview(context, _build_settings_payload())
+        incoming_languages = payload.get("languages", {})
+        if isinstance(incoming_languages, dict):
+            source_language = str(incoming_languages.get("source_language", "en") or "en")
+            target_language = str(incoming_languages.get("target_language", "vi") or "vi")
+            _save_translation_config(source_language, target_language)
+
+        saved_settings = _save_runtime_settings(payload)
+        _save_runtime_settings_to_config_file(saved_settings)
+        _send_to_webview(
+            context,
+            {
+                "type": "settings_state",
+                "settings": saved_settings,
+                "languages": _load_translation_config(),
+                "resources": {
+                    "mode": "api_only",
+                    "status_unknown": False,
+                },
+            },
+        )
         return (True, None)
 
     if message.startswith("settings:download:"):

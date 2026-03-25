@@ -49,6 +49,23 @@
             margin-top: 12px;
         }
 
+        .preview-actions {
+            margin-top: 14px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .preview-btn {
+            border: 1px solid #bfcced;
+            border-radius: 999px;
+            padding: 8px 14px;
+            background: #ffffff;
+            color: #14306f;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
         code {
             background: #eef3ff;
             border-radius: 6px;
@@ -74,16 +91,49 @@
             You can also select a phrase like <em>this is a translation test</em> to preview the translate
             mode popover.
         </p>
+
+        <div class="preview-actions">
+            <button id="preview-open-settings" class="preview-btn" type="button">Open Settings Popup</button>
+            <span class="hint">Hoac bam nut floating "setting" o goc phai tren.</span>
+        </div>
     </main>
 
     <script>
         (function () {
+            const mockState = {
+                settings: {
+                    enable_lookup: true,
+                    enable_translate: true,
+                    enable_audio: true,
+                    auto_play_audio: false,
+                    popover_trigger_mode: "auto",
+                    popover_shortcut: "Alt+1",
+                },
+                languages: {
+                    source_language: "en",
+                    target_language: "vi",
+                },
+                resources: {
+                    mode: "api_only",
+                    status_unknown: false,
+                },
+            };
+
             function decodePayload(value) {
                 try {
                     return decodeURIComponent(value || "");
                 } catch (_error) {
                     return value || "";
                 }
+            }
+
+            function sendMockSettingsState() {
+                window.updatePopover({
+                    type: "settings_state",
+                    settings: Object.assign({}, mockState.settings),
+                    languages: Object.assign({}, mockState.languages),
+                    resources: Object.assign({}, mockState.resources),
+                });
             }
 
             function mockLookupResponse(wordRaw) {
@@ -134,22 +184,7 @@
                 const input = String(message || "");
 
                 if (input === "settings:get") {
-                    window.updatePopover({
-                        type: "settings_state",
-                        settings: {
-                            enable_lookup: true,
-                            enable_translate: true,
-                            enable_audio: true,
-                        },
-                        languages: {
-                            source_language: "en",
-                            target_language: "vi",
-                        },
-                        resources: {
-                            mode: "api_only",
-                            status_unknown: false,
-                        },
-                    });
+                    sendMockSettingsState();
                     return;
                 }
 
@@ -170,10 +205,42 @@
                 }
 
                 if (input.startsWith("settings:save:")) {
-                    window.updatePopover({
-                        type: "settings_error",
-                        message: "Preview mode: settings are mocked only.",
-                    });
+                    const payloadRaw = decodePayload(input.slice("settings:save:".length));
+
+                    try {
+                        const parsed = JSON.parse(payloadRaw || "{}");
+                        if (parsed && typeof parsed === "object") {
+                            if (parsed.languages && typeof parsed.languages === "object") {
+                                if (parsed.languages.source_language) {
+                                    mockState.languages.source_language = String(parsed.languages.source_language);
+                                }
+                                if (parsed.languages.target_language) {
+                                    mockState.languages.target_language = String(parsed.languages.target_language);
+                                }
+                            }
+
+                            const keys = [
+                                "enable_lookup",
+                                "enable_translate",
+                                "enable_audio",
+                                "auto_play_audio",
+                                "popover_trigger_mode",
+                                "popover_shortcut",
+                            ];
+
+                            keys.forEach(function (key) {
+                                if (Object.prototype.hasOwnProperty.call(parsed, key)) {
+                                    mockState.settings[key] = parsed[key];
+                                }
+                            });
+                        }
+                        sendMockSettingsState();
+                    } catch (_error) {
+                        window.updatePopover({
+                            type: "settings_error",
+                            message: "Preview mode: invalid settings payload.",
+                        });
+                    }
                     return;
                 }
 
@@ -188,6 +255,21 @@
     </script>
 
     <script src="./popup.js"></script>
+    <script>
+        (function () {
+            const openBtn = document.getElementById("preview-open-settings");
+            if (!openBtn) {
+                return;
+            }
+
+            openBtn.addEventListener("click", function () {
+                const trigger = document.querySelector(".apl-settings-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+            });
+        })();
+    </script>
 </body>
 
 </html>

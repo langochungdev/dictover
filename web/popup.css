@@ -519,6 +519,76 @@
     letter-spacing: 0.03em;
 }
 
+.apl-settings-language-row {
+    display: flex;
+    align-items: end;
+    gap: 8px;
+}
+
+.apl-settings-field {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.apl-settings-field span {
+    color: #1f2f49;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.apl-settings-field select,
+.apl-settings-field input {
+    border: 1px solid #c8d3ea;
+    border-radius: 8px;
+    padding: 7px 10px;
+    color: #132548;
+    background: #ffffff;
+    font-size: 14px;
+}
+
+.apl-settings-swap-languages {
+    align-self: end;
+    border-radius: 10px;
+    min-width: 44px;
+    padding: 7px 10px;
+}
+
+.apl-settings-radio {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: #1f2f49;
+}
+
+.apl-settings-shortcut-group {
+    margin-top: 8px;
+}
+
+.apl-settings-shortcut-group--hidden {
+    display: none;
+}
+
+.apl-settings-hint {
+    margin-top: 6px;
+    color: #445878;
+    font-size: 12px;
+}
+
+@media (max-width: 560px) {
+    .apl-settings-language-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .apl-settings-swap-languages {
+        align-self: center;
+        min-width: 60px;
+    }
+}
+
 .apl-settings-toggle {
     display: flex;
     align-items: center;
@@ -530,6 +600,16 @@
 .apl-settings-toggle input {
     width: 16px;
     height: 16px;
+}
+
+.apl-settings-toggle input[type="checkbox"] {
+    appearance: auto !important;
+    -webkit-appearance: checkbox !important;
+    -moz-appearance: checkbox !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    position: static !important;
+    cursor: pointer;
 }
 
 .apl-settings-resource {

@@ -13,14 +13,18 @@
   let settingsTriggerEl = null;
   let settingsModalEl = null;
   let settingsModalWarm = false;
+  let settingsLoaded = false;
   let settingsRequestPending = false;
   let settingsLastRequestedAt = 0;
+  let settingsSaveGuardSnapshot = null;
+  let settingsSaveGuardUntil = 0;
   let settingsTriggerHideTimerId = null;
   let settingsTriggerBootVisibleDone = false;
   let settingsTriggerHoverListenerBound = false;
   let settingsProgressTickerId = null;
   let subPanelEl = null;
   let pendingCommandToken = 0;
+  let pendingSelectionAction = null;
   let lastLookupDetails = null;
   let lastAnchor = { x: 24, y: 24 };
   let pendingTimer = null;
@@ -34,6 +38,11 @@
 
   const settingsState = {
     languages: { source_language: "en", target_language: "vi" },
+    popover: {
+      trigger_mode: "auto",
+      shortcut_combo: "Alt+1",
+      auto_play_audio: false,
+    },
     resources: {
       mode: "api_only",
       status_unknown: false,
@@ -47,9 +56,22 @@
 
   let settingsMessage = "";
   const SETTINGS_REQUEST_COOLDOWN_MS = 3000;
+  const SETTINGS_SAVE_GUARD_MS = 3000;
   const SETTINGS_TRIGGER_BOOT_VISIBLE_MS = 10000;
   const SETTINGS_TRIGGER_HOTZONE_TOP_PX = 120;
   const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
+  const DEFAULT_SHORTCUT_COMBO = "Alt+1";
+  const SUPPORTED_LANGUAGES = [
+    { code: "auto", label: "Tự động nhận diện" },
+    { code: "en", label: "Tiếng Anh" },
+    { code: "vi", label: "Tiếng Việt" },
+    { code: "ja", label: "Tiếng Nhật" },
+    { code: "ko", label: "Tiếng Hàn" },
+    { code: "zh-CN", label: "Tiếng Trung (Giản thể)" },
+    { code: "fr", label: "Tiếng Pháp" },
+    { code: "de", label: "Tiếng Đức" },
+    { code: "es", label: "Tiếng Tây Ban Nha" },
+  ];
   const RESOURCE_TIMEOUT_SECONDS = {
     argostranslate: 75,
     language_pack: 300,
@@ -571,6 +593,21 @@
     }
   }
 
+  function maybeAutoPlayAudio(data) {
+    if (!data || !settingsState.popover.auto_play_audio || !toolSettings.enable_audio) {
+      return;
+    }
+
+    if (data.type === "lookup") {
+      playAudio(String(data.audio_url || ""), String(data.word || ""));
+      return;
+    }
+
+    if (data.type === "translate") {
+      playAudio("", String(data.original || ""));
+    }
+  }
+
   function renderMeanings(meanings) {
     if (!Array.isArray(meanings) || meanings.length === 0) {
       return '<div class="apl-error">Khong tim thay dinh nghia.</div>';
@@ -790,6 +827,7 @@
 
     if (!popoverEl) {
       showPopover(lastAnchor.x, lastAnchor.y, data);
+      maybeAutoPlayAudio(data);
       return;
     }
 
@@ -797,6 +835,7 @@
     popoverEl.innerHTML = renderState(data);
     bindPopoverActions(popoverEl);
     placePopover(popoverEl, lastAnchor.x, lastAnchor.y);
+    maybeAutoPlayAudio(data);
   }
 
   function refreshPopoverPosition() {
@@ -811,15 +850,53 @@
 
   function updateSettingsState(data) {
     const incomingLanguages = data.languages || {};
+    const incomingSettings = data.settings || {};
+    const nowTs = Date.now();
 
-    // Tool toggles are intentionally fixed on; settings modal no longer exposes them.
-    toolSettings.enable_lookup = true;
-    toolSettings.enable_translate = true;
-    toolSettings.enable_audio = true;
-
-    settingsState.languages = {
+    const incomingState = {
       source_language: String(incomingLanguages.source_language || "en"),
       target_language: String(incomingLanguages.target_language || "vi"),
+      trigger_mode: incomingSettings.popover_trigger_mode === "shortcut" ? "shortcut" : "auto",
+      shortcut_combo: normalizeShortcutCombo(incomingSettings.popover_shortcut || DEFAULT_SHORTCUT_COMBO),
+      auto_play_audio: Boolean(incomingSettings.auto_play_audio),
+    };
+
+    if (settingsSaveGuardSnapshot && nowTs <= settingsSaveGuardUntil) {
+      const mismatch =
+        incomingState.source_language !== settingsSaveGuardSnapshot.source_language ||
+        incomingState.target_language !== settingsSaveGuardSnapshot.target_language ||
+        incomingState.trigger_mode !== settingsSaveGuardSnapshot.trigger_mode ||
+        incomingState.shortcut_combo !== settingsSaveGuardSnapshot.shortcut_combo ||
+        incomingState.auto_play_audio !== settingsSaveGuardSnapshot.auto_play_audio;
+
+      if (mismatch) {
+        pushDebug("Bo qua settings_state cu vi khong khop state vua luu.");
+        return;
+      }
+    }
+
+    if (settingsSaveGuardSnapshot && nowTs > settingsSaveGuardUntil) {
+      settingsSaveGuardSnapshot = null;
+      settingsSaveGuardUntil = 0;
+    }
+
+    toolSettings.enable_lookup = Boolean(incomingSettings.enable_lookup !== false);
+    toolSettings.enable_translate = Boolean(incomingSettings.enable_translate !== false);
+    toolSettings.enable_audio = Boolean(incomingSettings.enable_audio !== false);
+
+    settingsState.popover = {
+      trigger_mode: incomingState.trigger_mode,
+      shortcut_combo: incomingState.shortcut_combo,
+      auto_play_audio: incomingState.auto_play_audio,
+    };
+
+    if (settingsState.popover.trigger_mode === "auto") {
+      pendingSelectionAction = null;
+    }
+
+    settingsState.languages = {
+      source_language: incomingState.source_language,
+      target_language: incomingState.target_language,
     };
 
     settingsState.resources = {
@@ -827,7 +904,11 @@
       status_unknown: false,
     };
 
-    renderSettingsModal();
+    settingsLoaded = true;
+
+    if (!syncSettingsFormIfOpen()) {
+      renderSettingsModal();
+    }
   }
 
   function requestSettings(force) {
@@ -853,6 +934,13 @@
         enable_lookup: toolSettings.enable_lookup,
         enable_translate: toolSettings.enable_translate,
         enable_audio: toolSettings.enable_audio,
+        auto_play_audio: settingsState.popover.auto_play_audio,
+        popover_trigger_mode: settingsState.popover.trigger_mode,
+        popover_shortcut: settingsState.popover.shortcut_combo,
+        languages: {
+          source_language: settingsState.languages.source_language,
+          target_language: settingsState.languages.target_language,
+        },
       })
     );
 
@@ -1090,6 +1178,26 @@
     return Math.max(0, Math.min(100, value));
   }
 
+  function languageSelectHtml(selectClass, selectedCode, includeAutoDetect) {
+    const options = SUPPORTED_LANGUAGES.filter(function (item) {
+      if (includeAutoDetect) {
+        return true;
+      }
+      return item.code !== "auto";
+    })
+      .map(function (item) {
+        const selected = item.code === selectedCode ? " selected" : "";
+        return '<option value="' + escapeHtml(item.code) + '"' + selected + ">" + escapeHtml(item.label) + "</option>";
+      })
+      .join("");
+
+    return '<select class="' + selectClass + '">' + options + "</select>";
+  }
+
+  function triggerModeChecked(mode) {
+    return settingsState.popover.trigger_mode === mode ? " checked" : "";
+  }
+
   function renderSettingsModal() {
     if (!settingsModalEl) {
       return;
@@ -1099,33 +1207,56 @@
       ? '<div class="apl-settings-error">' + escapeHtml(settingsMessage) + "</div>"
       : "";
 
-    const modeHtml =
-      '<div class="apl-settings-resource">' +
-      '<div class="apl-settings-resource-top">' +
-      '<div class="apl-settings-resource-name">Che do dich</div>' +
-      '<div class="apl-settings-resource-status">API online</div>' +
-      "</div>" +
-      '<div class="apl-settings-resource-message">Khong can cai ArgosTranslate hoac language pack offline.</div>' +
-      "</div>";
+    const shortcutClass =
+      settingsState.popover.trigger_mode === "shortcut"
+        ? "apl-settings-shortcut-group"
+        : "apl-settings-shortcut-group apl-settings-shortcut-group--hidden";
 
     settingsModalEl.innerHTML =
       '<div class="apl-settings-overlay" role="dialog" aria-modal="true" aria-labelledby="apl-settings-title">' +
       '<div class="apl-settings-modal">' +
       '<div class="apl-settings-header">' +
       '<div class="apl-settings-title-wrap">' +
-      '<div class="apl-settings-subtitle">Popup Lookup</div>' +
-      '<h3 class="apl-settings-title" id="apl-settings-title">Settings</h3>' +
+      '<h3 class="apl-settings-title" id="apl-settings-title">Cài đặt</h3>' +
       "</div>" +
-      '<button class="apl-close apl-settings-close" type="button" aria-label="Close">x</button>' +
+      '<button class="apl-close apl-settings-close" type="button" aria-label="Đóng">x</button>' +
       "</div>" +
       '<div class="apl-settings-section">' +
-      '<div class="apl-settings-section-title">Translation</div>' +
-      modeHtml +
+      '<div class="apl-settings-section-title">Ngôn ngữ</div>' +
+      '<div class="apl-settings-language-row">' +
+      '<label class="apl-settings-field"><span>Ngôn ngữ vào</span>' +
+      languageSelectHtml("apl-settings-source-language", settingsState.languages.source_language, true) +
+      "</label>" +
+      '<button class="apl-button apl-settings-swap-languages" type="button" aria-label="Đổi qua lại ngôn ngữ vào và ra">↔</button>' +
+      '<label class="apl-settings-field"><span>Ngôn ngữ ra</span>' +
+      languageSelectHtml("apl-settings-target-language", settingsState.languages.target_language, false) +
+      "</label>" +
+      "</div>" +
+      "</div>" +
+      '<div class="apl-settings-section">' +
+      '<div class="apl-settings-section-title">Cách hiện popover</div>' +
+      '<label class="apl-settings-radio"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="auto"' +
+      triggerModeChecked("auto") +
+      '> Bôi xong tự động hiện popover</label>' +
+      '<label class="apl-settings-radio"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="shortcut"' +
+      triggerModeChecked("shortcut") +
+      '> Bôi xong rồi bấm phím tắt để hiện popover</label>' +
+      '<div class="' + shortcutClass + '">' +
+      '<label class="apl-settings-field"><span>Phím tắt</span>' +
+      '<input class="apl-settings-shortcut-input" type="text" readonly value="' +
+      escapeHtml(settingsState.popover.shortcut_combo) +
+      '" placeholder="Nhấn tổ hợp phím" />' +
+      "</label>" +
+      '<div class="apl-settings-hint">Chọn ô rồi nhấn trực tiếp phím hoặc tổ hợp phím, ví dụ: Shift, Alt+1, Ctrl+Shift+L.</div>' +
+      "</div>" +
+      "</div>" +
+      '<div class="apl-settings-section">' +
+      '<div class="apl-settings-section-title">Âm thanh</div>' +
+      '<label class="apl-settings-toggle"><input class="apl-settings-auto-play-audio" type="checkbox"' +
+      (settingsState.popover.auto_play_audio ? " checked" : "") +
+      '"> Tự động phát audio khi popover hiện lên</label>' +
       "</div>" +
       errorHtml +
-      '<div class="apl-settings-actions">' +
-      '<button class="apl-button apl-settings-refresh" type="button">Refresh</button>' +
-      "</div>" +
       "</div>" +
       "</div>";
 
@@ -1134,10 +1265,183 @@
     ensureSettingsProgressTicker();
   }
 
+  function normalizeShortcutCombo(inputValue) {
+    const raw = String(inputValue || "").trim();
+    if (!raw) {
+      return DEFAULT_SHORTCUT_COMBO;
+    }
+
+    const tokens = raw
+      .split("+")
+      .map(function (token) {
+        return token.trim().toLowerCase();
+      })
+      .filter(Boolean);
+
+    if (tokens.length === 0) {
+      return DEFAULT_SHORTCUT_COMBO;
+    }
+
+    const modifierOrder = ["ctrl", "alt", "shift", "meta"];
+    const modifierLabel = {
+      ctrl: "Ctrl",
+      alt: "Alt",
+      shift: "Shift",
+      meta: "Meta",
+    };
+
+    const modifiers = [];
+    let keyPart = "";
+
+    tokens.forEach(function (token) {
+      if (modifierOrder.indexOf(token) >= 0) {
+        if (modifiers.indexOf(token) === -1) {
+          modifiers.push(token);
+        }
+        return;
+      }
+
+      if (!keyPart) {
+        keyPart = token;
+      }
+    });
+
+    if (!keyPart) {
+      modifiers.sort(function (a, b) {
+        return modifierOrder.indexOf(a) - modifierOrder.indexOf(b);
+      });
+
+      const modifierOnly = modifiers
+        .map(function (token) {
+          return modifierLabel[token] || token;
+        })
+        .join("+");
+
+      return modifierOnly || DEFAULT_SHORTCUT_COMBO;
+    }
+
+    let finalKey = keyPart;
+    if (/^digit\d$/i.test(keyPart)) {
+      finalKey = keyPart.slice(-1);
+    } else if (/^key[a-z]$/i.test(keyPart)) {
+      finalKey = keyPart.slice(-1).toUpperCase();
+    } else {
+      finalKey = keyPart.length === 1 ? keyPart.toUpperCase() : keyPart.toUpperCase();
+    }
+
+    modifiers.sort(function (a, b) {
+      return modifierOrder.indexOf(a) - modifierOrder.indexOf(b);
+    });
+
+    const prefix = modifiers
+      .map(function (token) {
+        return modifierLabel[token] || token;
+      })
+      .join("+");
+
+    return prefix ? prefix + "+" + finalKey : finalKey;
+  }
+
+  function readSettingsFormValues() {
+    const sourceSelect = settingsModalEl.querySelector(".apl-settings-source-language");
+    const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
+    const triggerModeInput = settingsModalEl.querySelector(".apl-settings-trigger-mode:checked");
+    const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
+    const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
+
+    const sourceLanguage = sourceSelect ? String(sourceSelect.value || "en") : settingsState.languages.source_language;
+    const targetLanguage = targetSelect ? String(targetSelect.value || "vi") : settingsState.languages.target_language;
+    const triggerMode = triggerModeInput ? String(triggerModeInput.value || "auto") : settingsState.popover.trigger_mode;
+    const shortcutCombo = normalizeShortcutCombo(shortcutInput ? shortcutInput.value : settingsState.popover.shortcut_combo);
+    const autoPlayAudio = Boolean(autoPlayInput && autoPlayInput.checked);
+
+    return {
+      source_language: sourceLanguage,
+      target_language: targetLanguage,
+      trigger_mode: triggerMode === "shortcut" ? "shortcut" : "auto",
+      shortcut_combo: shortcutCombo,
+      auto_play_audio: autoPlayAudio,
+    };
+  }
+
+  function applySettingsFormValues(nextValues) {
+    settingsState.languages.source_language = nextValues.source_language;
+    settingsState.languages.target_language = nextValues.target_language;
+    settingsState.popover.trigger_mode = nextValues.trigger_mode;
+    settingsState.popover.shortcut_combo = nextValues.shortcut_combo;
+    settingsState.popover.auto_play_audio = nextValues.auto_play_audio;
+  }
+
+  function syncSettingsFormIfOpen() {
+    if (!settingsModalEl || settingsModalEl.classList.contains("apl-settings-root--hidden")) {
+      return false;
+    }
+
+    const sourceSelect = settingsModalEl.querySelector(".apl-settings-source-language");
+    const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
+    const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
+    const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
+    const autoMode = settingsModalEl.querySelector(
+      '.apl-settings-trigger-mode[value="auto"]'
+    );
+    const shortcutMode = settingsModalEl.querySelector(
+      '.apl-settings-trigger-mode[value="shortcut"]'
+    );
+    const shortcutGroup = settingsModalEl.querySelector(".apl-settings-shortcut-group");
+
+    if (sourceSelect) {
+      sourceSelect.value = settingsState.languages.source_language;
+    }
+    if (targetSelect) {
+      targetSelect.value = settingsState.languages.target_language;
+    }
+    if (shortcutInput) {
+      shortcutInput.value = settingsState.popover.shortcut_combo;
+    }
+    if (autoPlayInput) {
+      autoPlayInput.checked = settingsState.popover.auto_play_audio;
+    }
+    if (autoMode) {
+      autoMode.checked = settingsState.popover.trigger_mode === "auto";
+    }
+    if (shortcutMode) {
+      shortcutMode.checked = settingsState.popover.trigger_mode === "shortcut";
+    }
+    if (shortcutGroup) {
+      if (settingsState.popover.trigger_mode === "shortcut") {
+        shortcutGroup.classList.remove("apl-settings-shortcut-group--hidden");
+      } else {
+        shortcutGroup.classList.add("apl-settings-shortcut-group--hidden");
+      }
+    }
+
+    return true;
+  }
+
   function bindSettingsActions() {
     const overlay = settingsModalEl.querySelector(".apl-settings-overlay");
     const closeButton = settingsModalEl.querySelector(".apl-settings-close");
-    const refreshButton = settingsModalEl.querySelector(".apl-settings-refresh");
+    const sourceSelect = settingsModalEl.querySelector(".apl-settings-source-language");
+    const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
+    const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
+    const swapButton = settingsModalEl.querySelector(".apl-settings-swap-languages");
+    const triggerModeInputs = settingsModalEl.querySelectorAll(".apl-settings-trigger-mode");
+    const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
+
+    function persistSettingsNow() {
+      const values = readSettingsFormValues();
+      applySettingsFormValues(values);
+      settingsSaveGuardSnapshot = {
+        source_language: settingsState.languages.source_language,
+        target_language: settingsState.languages.target_language,
+        trigger_mode: settingsState.popover.trigger_mode,
+        shortcut_combo: settingsState.popover.shortcut_combo,
+        auto_play_audio: settingsState.popover.auto_play_audio,
+      };
+      settingsSaveGuardUntil = Date.now() + SETTINGS_SAVE_GUARD_MS;
+      settingsMessage = "";
+      saveSettings();
+    }
 
     if (overlay) {
       overlay.addEventListener("mousedown", function (event) {
@@ -1153,12 +1457,62 @@
       });
     }
 
-    if (refreshButton) {
-      refreshButton.addEventListener("click", function () {
-        requestSettings(true);
+    if (swapButton) {
+      swapButton.addEventListener("click", function () {
+        if (!sourceSelect || !targetSelect) {
+          return;
+        }
+        const previousSource = String(sourceSelect.value || "en");
+        sourceSelect.value = String(targetSelect.value || "vi");
+        targetSelect.value = previousSource === "auto" ? "en" : previousSource;
+        persistSettingsNow();
       });
     }
 
+    if (sourceSelect) {
+      sourceSelect.addEventListener("change", persistSettingsNow);
+    }
+
+    if (targetSelect) {
+      targetSelect.addEventListener("change", persistSettingsNow);
+    }
+
+    if (autoPlayInput) {
+      autoPlayInput.addEventListener("change", persistSettingsNow);
+    }
+
+    triggerModeInputs.forEach(function (input) {
+      input.addEventListener("change", function () {
+        const values = readSettingsFormValues();
+        applySettingsFormValues(values);
+        renderSettingsModal();
+        persistSettingsNow();
+      });
+    });
+
+    if (shortcutInput) {
+      shortcutInput.addEventListener("keydown", function (event) {
+        if (event.key === "Tab") {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const nextShortcut = normalizeEventShortcutCombo(event);
+        if (!nextShortcut) {
+          return;
+        }
+
+        shortcutInput.value = normalizeShortcutCombo(nextShortcut);
+        persistSettingsNow();
+      });
+
+      shortcutInput.addEventListener("blur", function () {
+        shortcutInput.value = normalizeShortcutCombo(shortcutInput.value || DEFAULT_SHORTCUT_COMBO);
+        persistSettingsNow();
+      });
+    }
   }
 
   function openSettingsModal() {
@@ -1169,59 +1523,16 @@
     }
 
     if (!settingsModalWarm) {
-      renderSettingsModal();
+      if (!syncSettingsFormIfOpen()) {
+        renderSettingsModal();
+      }
     }
 
     settingsModalEl.classList.remove("apl-settings-root--hidden");
-    requestSettings(false);
+    if (!settingsLoaded) {
+      requestSettings(true);
+    }
   }
-
-  document.addEventListener("mouseup", function (event) {
-    if (settingsModalEl && settingsModalEl.contains(event.target)) {
-      return;
-    }
-
-    if (subPanelEl && subPanelEl.contains(event.target)) {
-      return;
-    }
-
-    if (popoverEl && popoverEl.contains(event.target)) {
-      return;
-    }
-
-    const text = normalizeSelection();
-    if (!text) {
-      return;
-    }
-
-    const wordCount = getWordCount(text);
-    const anchor = getSelectionAnchorPoint(event.clientX, event.clientY);
-
-    if (wordCount === 1 && !toolSettings.enable_lookup) {
-      showPopover(anchor.x, anchor.y, {
-        type: "error",
-        message: "Tinh nang tra tu dang tat trong Settings.",
-      });
-      return;
-    }
-
-    if (wordCount > 1 && !toolSettings.enable_translate) {
-      showPopover(anchor.x, anchor.y, {
-        type: "error",
-        message: "Tinh nang dich doan dang tat trong Settings.",
-      });
-      return;
-    }
-
-    showPopover(anchor.x, anchor.y, { loading: true, word: text });
-
-    if (wordCount === 1) {
-      sendCommand("lookup", text, anchor);
-      return;
-    }
-
-    sendCommand("translate", text, anchor);
-  });
 
   function sendCommand(commandType, text, anchor) {
     pendingCommandToken += 1;
@@ -1241,6 +1552,131 @@
     armPendingTimeout(commandType, text);
   }
 
+  function buildSelectionAction(text, anchor) {
+    const wordCount = getWordCount(text);
+
+    if (wordCount === 1 && !toolSettings.enable_lookup) {
+      showPopover(anchor.x, anchor.y, {
+        type: "error",
+        message: "Tinh nang tra tu dang tat trong Settings.",
+      });
+      return null;
+    }
+
+    if (wordCount > 1 && !toolSettings.enable_translate) {
+      showPopover(anchor.x, anchor.y, {
+        type: "error",
+        message: "Tinh nang dich doan dang tat trong Settings.",
+      });
+      return null;
+    }
+
+    return {
+      commandType: wordCount === 1 ? "lookup" : "translate",
+      text: text,
+      anchor: anchor,
+    };
+  }
+
+  function executeSelectionAction(action) {
+    if (!action) {
+      return;
+    }
+
+    showPopover(action.anchor.x, action.anchor.y, { loading: true, word: action.text });
+    sendCommand(action.commandType, action.text, action.anchor);
+  }
+
+  function keyFromEvent(event) {
+    const rawCode = String(event.code || "");
+    const rawKey = String(event.key || "");
+
+    if (rawKey === "Shift" || rawKey === "Control" || rawKey === "Alt" || rawKey === "Meta") {
+      return "";
+    }
+
+    if (/^Digit\d$/.test(rawCode)) {
+      return rawCode.slice(-1);
+    }
+
+    if (/^Key[A-Z]$/.test(rawCode)) {
+      return rawCode.slice(-1);
+    }
+
+    if (rawKey.length === 1) {
+      return rawKey.toUpperCase();
+    }
+
+    return rawKey.toUpperCase();
+  }
+
+  function normalizeEventShortcutCombo(event) {
+    const parts = [];
+
+    if (event.ctrlKey) {
+      parts.push("Ctrl");
+    }
+    if (event.altKey) {
+      parts.push("Alt");
+    }
+    if (event.shiftKey) {
+      parts.push("Shift");
+    }
+    if (event.metaKey) {
+      parts.push("Meta");
+    }
+
+    const key = keyFromEvent(event);
+    if (!key) {
+      return parts.join("+");
+    }
+
+    parts.push(key);
+    return parts.join("+");
+  }
+
+  function isShortcutTriggerEvent(event) {
+    const expected = normalizeShortcutCombo(settingsState.popover.shortcut_combo);
+    const actual = normalizeEventShortcutCombo(event);
+    return expected === actual;
+  }
+
+  document.addEventListener("mouseup", function (event) {
+    if (settingsModalEl && settingsModalEl.contains(event.target)) {
+      return;
+    }
+
+    if (subPanelEl && subPanelEl.contains(event.target)) {
+      return;
+    }
+
+    if (popoverEl && popoverEl.contains(event.target)) {
+      return;
+    }
+
+    const text = normalizeSelection();
+    if (!text) {
+      pendingSelectionAction = null;
+      return;
+    }
+
+    const anchor = getSelectionAnchorPoint(event.clientX, event.clientY);
+    const action = buildSelectionAction(text, anchor);
+    if (!action) {
+      pendingSelectionAction = null;
+      return;
+    }
+
+    if (settingsState.popover.trigger_mode === "shortcut") {
+      pendingSelectionAction = action;
+      pushDebug("Dang cho phim tat: " + settingsState.popover.shortcut_combo);
+      return;
+    }
+
+    pendingSelectionAction = null;
+    executeSelectionAction(action);
+  });
+
   document.addEventListener("mousedown", function (event) {
     if (settingsModalEl && settingsModalEl.contains(event.target)) {
       return;
@@ -1257,10 +1693,35 @@
 
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {
+      pendingSelectionAction = null;
       closeSettingsModal();
       closeSubPanel();
       closePopover();
+      return;
     }
+
+    const settingsModalVisible =
+      settingsModalEl && !settingsModalEl.classList.contains("apl-settings-root--hidden");
+    if (settingsModalVisible) {
+      return;
+    }
+
+    if (settingsState.popover.trigger_mode !== "shortcut") {
+      return;
+    }
+
+    if (!pendingSelectionAction) {
+      return;
+    }
+
+    if (!isShortcutTriggerEvent(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    const actionToRun = pendingSelectionAction;
+    pendingSelectionAction = null;
+    executeSelectionAction(actionToRun);
   });
 
   window.addEventListener("error", function (event) {
@@ -1276,7 +1737,7 @@
 
   ensureSettingsTrigger();
   window.setTimeout(function () {
-    requestSettings(false);
+    requestSettings(true);
   }, 350);
 
   pushDebug("popup.js da duoc load.");

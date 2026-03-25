@@ -41,7 +41,7 @@ DEFAULT_RUNTIME_SETTINGS = {
     "popover_shortcut": "Alt+1",
 }
 
-INSTALL_PING_URL = "https://langohung.me/api/ping/dictover"
+INSTALL_PING_URL = "https://langochung.me/api/ping/dictover"
 INSTALL_PING_MARKER = ADDON_DIR / ".install_ping_v1.json"
 
 _MESSAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="apl-worker")
@@ -51,6 +51,17 @@ def _write_install_ping_marker(payload: dict[str, object]) -> None:
     marker_tmp = INSTALL_PING_MARKER.with_suffix(".json.tmp")
     marker_tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     marker_tmp.replace(INSTALL_PING_MARKER)
+
+
+def _read_install_ping_marker() -> dict[str, object]:
+    try:
+        payload = json.loads(INSTALL_PING_MARKER.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+    return payload
 
 
 def _send_install_ping_once(marker_payload: dict[str, object]) -> None:
@@ -96,15 +107,27 @@ def _send_install_ping_once(marker_payload: dict[str, object]) -> None:
 
 
 def _ensure_install_ping_once() -> None:
-    if INSTALL_PING_MARKER.exists():
-        return
+    marker_payload: dict[str, object]
 
-    marker_payload: dict[str, object] = {
-        "version": 1,
-        "install_id": uuid.uuid4().hex,
-        "created_at": int(time.time()),
-        "status": "pending",
-    }
+    if INSTALL_PING_MARKER.exists():
+        existing = _read_install_ping_marker()
+        status = str(existing.get("status", "")).strip().lower()
+        if status == "ok":
+            return
+
+        marker_payload = {
+            "version": 1,
+            "install_id": str(existing.get("install_id") or uuid.uuid4().hex),
+            "created_at": int(existing.get("created_at") or int(time.time())),
+            "status": "pending",
+        }
+    else:
+        marker_payload = {
+            "version": 1,
+            "install_id": uuid.uuid4().hex,
+            "created_at": int(time.time()),
+            "status": "pending",
+        }
 
     try:
         _write_install_ping_marker(marker_payload)

@@ -270,6 +270,11 @@ def _save_runtime_settings_to_addon_config(runtime_settings: dict[str, object]) 
         print(f"[{ADDON_MODULE}] Cannot mirror runtime settings to addon config: {error}")
 
 
+def _is_debug_panel_always_visible() -> bool:
+    raw = _load_raw_config_file()
+    return _coerce_bool(raw.get("debug_panel_always_visible"), False)
+
+
 def _send_to_webview(context: object, payload: dict) -> None:
     data = json.dumps(payload, ensure_ascii=False)
     js = f"window.updatePopover({data});"
@@ -306,7 +311,12 @@ def _send_to_webview(context: object, payload: dict) -> None:
 
 def on_card_show(html: str, card, context) -> str:
     css_tag = f"<link rel='stylesheet' href='{ASSET_CSS_PATH}'>"
-    context_flag_tag = "<script>window.__aplIsDeckBrowser=false;</script>"
+    debug_flag = "true" if _is_debug_panel_always_visible() else "false"
+    context_flag_tag = (
+        "<script>window.__aplIsDeckBrowser=false;"
+        f"window.__aplDebugPanelAlwaysVisible={debug_flag};"
+        "</script>"
+    )
     js_tag = f"<script src='{ASSET_JS_PATH}'></script>"
 
     output = html
@@ -334,7 +344,12 @@ def on_webview_will_set_content(web_content, context) -> None:
         js_list.append(ASSET_JS_PATH)
 
     head_content = getattr(web_content, "head", None)
-    context_flag_tag = "<script>window.__aplIsDeckBrowser=true;</script>"
+    debug_flag = "true" if _is_debug_panel_always_visible() else "false"
+    context_flag_tag = (
+        "<script>window.__aplIsDeckBrowser=true;"
+        f"window.__aplDebugPanelAlwaysVisible={debug_flag};"
+        "</script>"
+    )
     if isinstance(head_content, str) and context_flag_tag not in head_content:
         web_content.head = head_content + context_flag_tag
 

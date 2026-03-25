@@ -158,6 +158,27 @@ def _launch_anki() -> tuple[bool, str]:
         return False, f"Cannot launch Anki: {error}"
 
 
+def _enable_local_debug_popup(target_root: Path) -> tuple[bool, str]:
+    config_path = target_root / "config.json"
+    payload: dict[str, object] = {}
+
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload = loaded
+        except Exception:
+            payload = {}
+
+    payload["debug_panel_always_visible"] = True
+
+    try:
+        config_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True, str(config_path)
+    except Exception as error:
+        return False, str(error)
+
+
 def main() -> None:
     source_root = _workspace_root()
     target_root = _addons21_dir() / _addon_folder_name(source_root)
@@ -187,6 +208,8 @@ def main() -> None:
     else:
         shutil.copytree(source_root, target_root, ignore=_ignore_filter, dirs_exist_ok=True)
 
+    debug_ok, debug_info = _enable_local_debug_popup(target_root)
+
     print(f"Deployed add-on to: {target_root}")
     print(f"Deploy mode: {deploy_mode}")
     if anki_was_running:
@@ -195,6 +218,10 @@ def main() -> None:
         print("Lock warnings:")
         for warning in lock_warnings:
             print(f"- {warning}")
+    if debug_ok:
+        print(f"Debug popup enabled for local deploy: {debug_info}")
+    else:
+        print(f"Debug popup enable failed: {debug_info}")
 
     launched_ok, launch_info = _launch_anki()
     if launched_ok:

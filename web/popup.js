@@ -82,7 +82,18 @@
     closed: "▸",
     open: "▾",
   };
-  const DEBUG_PANEL_ALWAYS_VISIBLE = true;
+  const AUDIO_ICON_SVG =
+    '<svg class="apl-audio-icon" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">' +
+    '<g fill="none" fill-rule="evenodd" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M6.5 8.5v4"/>' +
+    '<path d="M8.5 6.5v9"/>' +
+    '<path d="M10.5 9.5v2"/>' +
+    '<path d="M12.5 7.5v6.814"/>' +
+    '<path d="M14.5 4.5v12"/>' +
+    "</g></svg>";
+  const DEBUG_PANEL_ALWAYS_VISIBLE =
+    window.__aplDebugPanelAlwaysVisible === true ||
+    String(window.__aplDebugPanelAlwaysVisible || "").toLowerCase() === "true";
 
   function now() {
     return new Date().toLocaleTimeString();
@@ -826,7 +837,7 @@
         '<div class="apl-translate-en">' +
         original +
         "</div>" +
-        '<button class="apl-button apl-audio" type="button" data-word="' +
+        '<button class="apl-button apl-audio" type="button" aria-label="Play audio" data-word="' +
         original +
         '" data-audio="' +
         audio +
@@ -834,7 +845,9 @@
         audioLang +
         '"' +
         audioDisabled +
-        ">Audio</button>" +
+        ">" +
+        AUDIO_ICON_SVG +
+        "</button>" +
         "</div>" +
         '<div class="apl-translate-vi">' +
         translated +
@@ -876,7 +889,9 @@
         audioLang +
         '"' +
         audioDisabled +
-        ' aria-label="Play audio">🔊</button>' +
+        ' aria-label="Play audio">' +
+        AUDIO_ICON_SVG +
+        "</button>" +
         "</div>" +
         "</div>" +
         '<div class="apl-lookup-vi">' +

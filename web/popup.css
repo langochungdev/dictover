@@ -228,7 +228,7 @@
 
 .apl-lookup-headertext {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
     min-width: 0;
     flex-wrap: wrap;
@@ -326,35 +326,72 @@
 }
 
 .apl-audio-mini {
-    border-radius: 6px;
-    padding: 3px 6px;
+    border-radius: 999px;
+    padding: 2px;
     min-width: 0;
     line-height: 1;
     font-size: 0.9em;
     flex: 0 0 auto;
-    transition-property: background-color, box-shadow, transform !important;
-    transition-duration: 90ms !important;
-    transition-timing-function: ease-out !important;
+    align-self: center;
 }
 
-.apl-popover .apl-audio-mini,
+.apl-audio {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    overflow: visible;
+    border: 0 !important;
+    background: transparent !important;
+    color: #1e3a8a !important;
+    padding: 2px !important;
+    border-radius: 999px;
+    box-shadow: none !important;
+    transform: scale(1) !important;
+    transition-property: color, transform, filter !important;
+    transition-duration: 120ms !important;
+    transition-timing-function: ease !important;
+}
+
+.apl-audio-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    transform: scale(1.7);
+    transform-origin: center;
+}
+
+.apl-audio-icon path {
+    stroke-width: 1.8;
+}
+
+.apl-audio:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 .apl-popover .apl-lookup-definition-toggle {
     transition: none !important;
 }
 
-.apl-popover .apl-audio-mini:hover,
-.apl-popover .apl-audio-mini:focus {
-    background: #eaf0ff !important;
-    color: #1e3a8a !important;
-    transform: none !important;
-    box-shadow: none !important;
+@media (hover: hover) {
+
+    .apl-popover .apl-audio:not(:disabled):hover,
+    .apl-popover .apl-audio:not(:disabled):focus-visible {
+        background: transparent !important;
+        color: #0f2f7a !important;
+        transform: scale(1.08) !important;
+        filter: drop-shadow(0 0 4px rgba(30, 58, 138, 0.35)) !important;
+        box-shadow: none !important;
+    }
 }
 
-.apl-popover .apl-audio-mini:active {
-    background: #d7e3ff !important;
-    color: #15336e !important;
-    transform: translateY(1px) scale(0.97) !important;
-    box-shadow: inset 0 0 0 1px #9fb7eb !important;
+.apl-popover .apl-audio:not(:disabled):active {
+    background: transparent !important;
+    color: #14306f !important;
+    transform: scale(0.96) !important;
+    filter: none !important;
 }
 
 .apl-popover .apl-lookup-definition-toggle:hover,

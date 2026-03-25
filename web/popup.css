@@ -110,7 +110,7 @@
 }
 
 .apl-subpanel-body {
-    padding: 8px 10px;
+    padding: 4px 5px;
     overflow: auto;
     flex: 1;
     font-size: var(--apl-subpanel-font-size);
@@ -123,13 +123,13 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 5px 6px;
     border-bottom: 1px solid #edf1f7;
     font-weight: 600;
 }
 
 .apl-body {
-    padding: 10px 12px;
+    padding: 5px 6px;
     line-height: 1.45;
 }
 
@@ -195,7 +195,8 @@
 }
 
 .apl-translate-compact {
-    padding: 10px 12px;
+    padding: 5px 6px;
+    text-align: left !important;
 }
 
 .apl-translate-top {
@@ -203,22 +204,28 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    text-align: left !important;
 }
 
 .apl-translate-en {
     font-weight: 600;
     color: #121826;
     word-break: break-word;
+    text-align: left !important;
 }
 
 .apl-translate-vi {
     margin-top: 8px;
     color: #24324a;
     word-break: break-word;
+    text-align: left !important;
+    display: block;
+    width: 100%;
+    align-self: stretch;
 }
 
 .apl-lookup-compact {
-    padding: 10px 12px;
+    padding: 5px 6px;
 }
 
 .apl-lookup-headerline {

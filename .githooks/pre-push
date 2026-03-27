@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v cz >/dev/null 2>&1; then
+  echo "Commitizen is required. Install with: pip install -r requirements-dev.txt" >&2
+  exit 1
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "Working tree must be clean before pre-push release bump." >&2
+  exit 1
+fi
+
+set +e
+output="$(cz bump --yes --check-consistency 2>&1)"
+status=$?
+set -e
+
+if [[ $status -eq 0 ]]; then
+  echo "$output"
+  echo "Version and changelog were updated. Push canceled; run git push --follow-tags again." >&2
+  exit 1
+fi
+
+if echo "$output" | grep -qiE "No commits found|No increment found|No new commits"; then
+  exit 0
+fi
+
+echo "$output" >&2
+exit $status

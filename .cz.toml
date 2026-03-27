@@ -1,0 +1,12 @@
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_scheme = "semver"
+tag_format = "v$version"
+version_files = [
+  "manifest.json:version",
+]
+changelog_file = "CHANGELOG.md"
+update_changelog_on_bump = true
+major_version_zero = true
+bump_message = "chore(release): bump version $current_version -> $new_version"

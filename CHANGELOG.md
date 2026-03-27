@@ -5,12 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-- Keep a Changelog structure for tracking release history.
-
-## [0.1.0] - 2026-03-27
 
 ### Added
 - Initial public release of Popup Lookup add-on.
@@ -26,3 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/OWNER/REPO/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/OWNER/REPO/releases/tag/v0.1.0
+
+## v0.2.0 (2026-03-27)
+
+### Feat
+
+- Add Commitizen configuration and pre-push hook for versioning and changelog management
+- Enhance GitHub release workflow and add changelog for version tracking
+- Implement install ping marker reading and enhance installation tracking logic
+- Implement install ping functionality to track addon installations
+- Refactor settings modal layout and improve radio button handling for shortcut options
+- Add debug panel visibility toggle and audio playback icon to UI
+- Enhance settings management with new boolean coercion and config file handling
+- Add audio playback functionality and language normalization
+
+### Fix
+
+- Align text to the left for translation components in popup CSS
+- Update asset version and improve settings modal behavior for deck browser

@@ -947,6 +947,16 @@
     return escapeHtml(defs[0].definition || "");
   }
 
+  function renderLoadingDots(ariaLabel) {
+    return (
+      '<div class="apl-loading" role="status" aria-live="polite" aria-label="' +
+      escapeHtml(ariaLabel || "Loading") +
+      '">' +
+      '<span class="apl-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
+      "</div>"
+    );
+  }
+
   function renderState(data) {
     if (data && data.loading) {
       return (
@@ -954,9 +964,10 @@
         '<span>' +
         escapeHtml(data.word || "Lookup") +
         "</span>" +
-        '<button class="apl-close" type="button" aria-label="Close">x</button>' +
         "</div>" +
-        '<div class="apl-body"><div class="apl-loading">Dang tra...</div></div>'
+        '<div class="apl-body">' +
+        renderLoadingDots("Dang tra") +
+        "</div>"
       );
     }
 
@@ -964,7 +975,6 @@
       return (
         '<div class="apl-header">' +
         '<span>Lookup</span>' +
-        '<button class="apl-close" type="button" aria-label="Close">x</button>' +
         "</div>" +
         '<div class="apl-body"><div class="apl-error">' +
         escapeHtml(data.message || "Co loi xay ra") +
@@ -1062,9 +1072,10 @@
     return (
       '<div class="apl-header">' +
       '<span>Lookup</span>' +
-      '<button class="apl-close" type="button" aria-label="Close">x</button>' +
       "</div>" +
-      '<div class="apl-body"><div class="apl-loading">Dang cho du lieu...</div></div>'
+      '<div class="apl-body">' +
+      renderLoadingDots("Dang cho du lieu") +
+      "</div>"
     );
   }
 

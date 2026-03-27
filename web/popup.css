@@ -64,6 +64,7 @@
 .apl-popover {
     position: fixed;
     z-index: 9999;
+    display: inline-block;
     width: fit-content;
     max-width: min(560px, calc(100vw - 20px));
     max-height: min(55vh, 420px);
@@ -194,11 +195,14 @@
     min-height: 18px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    width: 100%;
 }
 
 .apl-loading-dots {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 5px;
     height: 12px;
 }
@@ -209,36 +213,30 @@
     border-radius: 999px;
     background: #4d5b79;
     opacity: 0.35;
-    animation: apl-loading-dot-pulse 1s infinite ease-in-out;
+    transform: translateY(0);
+    animation: apl-loading-dot-wave 1.05s infinite ease-in-out !important;
 }
 
 .apl-loading-dots span:nth-child(2) {
-    animation-delay: 0.15s;
+    animation-delay: 0.2s;
 }
 
 .apl-loading-dots span:nth-child(3) {
-    animation-delay: 0.3s;
+    animation-delay: 0.4s;
 }
 
-@keyframes apl-loading-dot-pulse {
+@keyframes apl-loading-dot-wave {
 
     0%,
-    80%,
+    55%,
     100% {
         opacity: 0.35;
         transform: translateY(0);
     }
 
-    40% {
+    25% {
         opacity: 1;
-        transform: translateY(-1px);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .apl-loading-dots span {
-        animation: none;
-        opacity: 0.8;
+        transform: translateY(-4px);
     }
 }
 
@@ -317,10 +315,10 @@
     all: unset;
     margin-top: 8px !important;
     padding: 0;
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
+    display: block;
+    position: relative;
     width: 100%;
+    max-width: 100%;
     text-align: left;
     cursor: pointer;
     box-sizing: border-box;
@@ -341,7 +339,9 @@
     color: #1e3a8a;
     font-size: 0.95em;
     line-height: 1.35;
-    flex: 0 0 auto;
+    position: absolute;
+    left: 0;
+    top: 0.05em;
     font-family: "Segoe UI", Tahoma, sans-serif !important;
     text-decoration: none !important;
     transform: none !important;
@@ -351,11 +351,13 @@
     all: unset;
     margin-top: 0;
     padding-top: 0;
-    flex: 1;
+    min-width: 0;
     color: #24324a;
     overflow-wrap: anywhere;
+    white-space: normal;
     text-align: left;
     display: block;
+    text-indent: 16px;
     font-family: "Segoe UI", Tahoma, sans-serif !important;
     font-size: 1em !important;
     font-weight: 400 !important;

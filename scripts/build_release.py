@@ -35,17 +35,12 @@ EXCLUDED_SUFFIXES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build release archives (.zip and .ankiaddon) for this Anki add-on."
+        description="Build release archive (.ankiaddon) for this Anki add-on."
     )
     parser.add_argument(
         "--output-dir",
         default="dist",
         help="Output folder relative to repository root (default: dist).",
-    )
-    parser.add_argument(
-        "--version",
-        default="",
-        help="Optional version tag in output filename. Example: --version 1.2.0",
     )
     parser.add_argument(
         "--include-scripts",
@@ -59,7 +54,20 @@ def load_manifest(root: Path) -> dict:
     manifest_path = root / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError("manifest.json not found in repository root")
-    return json.loads(manifest_path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("manifest.json is not valid JSON") from exc
+
+    if not isinstance(payload, dict):
+        raise RuntimeError("manifest.json must be a JSON object")
+    return payload
+
+def load_manifest_version(manifest: dict) -> str:
+    version = str(manifest.get("version") or "").strip()
+    if not version:
+        raise RuntimeError("manifest.json must contain a non-empty 'version' field")
+    return version
 
 
 def should_exclude(path: Path, root: Path, include_scripts: bool) -> bool:
@@ -108,9 +116,7 @@ def build_archive(archive_path: Path, files: list[Path], root: Path) -> None:
 
 def cleanup_previous_artifacts(output_dir: Path, package_name: str) -> None:
     patterns = [
-        f"{package_name}.zip",
         f"{package_name}.ankiaddon",
-        f"{package_name}-*.zip",
         f"{package_name}-*.ankiaddon",
     ]
     for pattern in patterns:
@@ -124,25 +130,21 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     manifest = load_manifest(root)
     package_name = str(manifest.get("package") or root.name).strip() or root.name
+    version = load_manifest_version(manifest)
 
     output_dir = (root / args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_previous_artifacts(output_dir, package_name)
 
     files = collect_files(root, include_scripts=bool(args.include_scripts))
-    if args.version.strip():
-        stem = f"{package_name}-{args.version.strip()}"
-    else:
-        stem = package_name
+    stem = f"{package_name}-{version}"
 
-    zip_path = output_dir / f"{stem}.zip"
     ankiaddon_path = output_dir / f"{stem}.ankiaddon"
 
-    build_archive(zip_path, files, root)
     build_archive(ankiaddon_path, files, root)
 
-    print(f"Built: {zip_path}")
     print(f"Built: {ankiaddon_path}")
+    print(f"Version: {version}")
     print(f"Files: {len(files)}")
     return 0
 

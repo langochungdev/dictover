@@ -1,5 +1,6 @@
 {
   "package": "anki_popup_lookup",
+  "version": "0.1.0",
   "name": "Popup Lookup - Definition & Translation",
   "mod": 0,
   "min_point_version": 231000,

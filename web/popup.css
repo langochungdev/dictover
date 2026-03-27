@@ -645,11 +645,18 @@
     flex: 1;
 }
 
-.apl-settings-field--shortcut-inline span {
-    display: none;
+.apl-settings-shortcut-input {
+    width: 50%;
+    min-width: 120px;
 }
 
-.apl-settings-shortcut-group--hidden {
+.apl-settings-shortcut-input:disabled {
+    background: #f2f5fb;
+    color: #5c6f92;
+    cursor: not-allowed;
+}
+
+.apl-settings-field--shortcut-inline span {
     display: none;
 }
 

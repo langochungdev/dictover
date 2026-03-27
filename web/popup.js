@@ -43,7 +43,7 @@
     languages: { source_language: "en", target_language: "vi" },
     popover: {
       trigger_mode: "auto",
-      shortcut_combo: "Alt+1",
+      shortcut_combo: "Shift",
       auto_play_audio: false,
     },
     resources: {
@@ -63,7 +63,7 @@
   const SETTINGS_TRIGGER_BOOT_VISIBLE_MS = 10000;
   const SETTINGS_TRIGGER_HOTZONE_TOP_PX = 120;
   const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
-  const DEFAULT_SHORTCUT_COMBO = "Alt+1";
+  const DEFAULT_SHORTCUT_COMBO = "Shift";
   const SUPPORTED_LANGUAGES = [
     { code: "en", label: "Tiếng Anh" },
     { code: "zh-CN", label: "Tiếng Trung" },
@@ -1495,10 +1495,8 @@
       ? '<div class="apl-settings-error">' + escapeHtml(settingsMessage) + "</div>"
       : "";
 
-    const shortcutClass =
-      settingsState.popover.trigger_mode === "shortcut"
-        ? "apl-settings-shortcut-group"
-        : "apl-settings-shortcut-group apl-settings-shortcut-group--hidden";
+    const shortcutDisabledAttr =
+      settingsState.popover.trigger_mode === "shortcut" ? "" : " disabled";
 
     settingsModalEl.innerHTML =
       '<div class="apl-settings-overlay" role="dialog" aria-modal="true">' +
@@ -1522,15 +1520,17 @@
       '<label class="apl-settings-radio apl-settings-radio--inline"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="shortcut"' +
       triggerModeChecked("shortcut") +
       '> dịch khi bấm phím</label>' +
-      '<div class="' + shortcutClass + '">' +
+      '<div class="apl-settings-shortcut-group">' +
       '<label class="apl-settings-field apl-settings-field--shortcut-inline"><span>Phím tắt</span>' +
       '<input class="apl-settings-shortcut-input" type="text" readonly value="' +
       escapeHtml(settingsState.popover.shortcut_combo) +
-      '" placeholder="Nhấn tổ hợp phím" />' +
+      '"' +
+      shortcutDisabledAttr +
+      ' placeholder="Nhấn tổ hợp phím" />' +
       "</label>" +
       "</div>" +
       "</div>" +
-      '<div class="' + shortcutClass + '">' +
+      '<div class="apl-settings-shortcut-group">' +
       '<div class="apl-settings-hint">Chọn ô rồi nhấn trực tiếp phím hoặc tổ hợp phím, ví dụ: Shift, Alt+1, Ctrl+Shift+L.</div>' +
       "</div>" +
       "</div>" +
@@ -1670,7 +1670,6 @@
     const shortcutMode = settingsModalEl.querySelector(
       '.apl-settings-trigger-mode[value="shortcut"]'
     );
-    const shortcutGroups = settingsModalEl.querySelectorAll(".apl-settings-shortcut-group");
 
     if (sourceSelect) {
       sourceSelect.value = settingsState.languages.source_language;
@@ -1680,6 +1679,7 @@
     }
     if (shortcutInput) {
       shortcutInput.value = settingsState.popover.shortcut_combo;
+      shortcutInput.disabled = settingsState.popover.trigger_mode !== "shortcut";
     }
     if (autoPlayInput) {
       autoPlayInput.checked = settingsState.popover.auto_play_audio;
@@ -1696,13 +1696,6 @@
     if (shortcutMode) {
       shortcutMode.checked = settingsState.popover.trigger_mode === "shortcut";
     }
-    shortcutGroups.forEach(function (shortcutGroup) {
-      if (settingsState.popover.trigger_mode === "shortcut") {
-        shortcutGroup.classList.remove("apl-settings-shortcut-group--hidden");
-      } else {
-        shortcutGroup.classList.add("apl-settings-shortcut-group--hidden");
-      }
-    });
 
     return true;
   }
@@ -1775,14 +1768,9 @@
         const values = readSettingsFormValues();
         applySettingsFormValues(values);
 
-        const shortcutGroups = settingsModalEl.querySelectorAll(".apl-settings-shortcut-group");
-        shortcutGroups.forEach(function (shortcutGroup) {
-          if (settingsState.popover.trigger_mode === "shortcut") {
-            shortcutGroup.classList.remove("apl-settings-shortcut-group--hidden");
-          } else {
-            shortcutGroup.classList.add("apl-settings-shortcut-group--hidden");
-          }
-        });
+        if (shortcutInput) {
+          shortcutInput.disabled = settingsState.popover.trigger_mode !== "shortcut";
+        }
 
         pushDebug(
           "trigger_mode changed -> " +
@@ -1795,7 +1783,13 @@
     });
 
     if (shortcutInput) {
+      shortcutInput.disabled = settingsState.popover.trigger_mode !== "shortcut";
+
       shortcutInput.addEventListener("keydown", function (event) {
+        if (shortcutInput.disabled) {
+          return;
+        }
+
         if (event.key === "Tab") {
           return;
         }
@@ -1813,6 +1807,10 @@
       });
 
       shortcutInput.addEventListener("blur", function () {
+        if (shortcutInput.disabled) {
+          return;
+        }
+
         shortcutInput.value = normalizeShortcutCombo(shortcutInput.value || DEFAULT_SHORTCUT_COMBO);
         persistSettingsNow();
       });

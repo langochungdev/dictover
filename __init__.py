@@ -38,7 +38,7 @@ DEFAULT_RUNTIME_SETTINGS = {
     "enable_audio": True,
     "auto_play_audio": False,
     "popover_trigger_mode": "auto",
-    "popover_shortcut": "Alt+1",
+    "popover_shortcut": "Shift",
 }
 
 INSTALL_PING_URL = "https://langochung.me/api/ping/dictover"

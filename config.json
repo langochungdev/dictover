@@ -8,5 +8,5 @@
   "enable_audio": true,
   "auto_play_audio": false,
   "popover_trigger_mode": "auto",
-  "popover_shortcut": "Alt+1"
+  "popover_shortcut": "Shift"
 }

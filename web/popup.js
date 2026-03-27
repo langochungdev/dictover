@@ -27,6 +27,7 @@
   let pendingSelectionAction = null;
   let activeCommandMeta = null;
   let pendingNativeAudioFallback = null;
+  let activeHtmlAudioElements = [];
   let lastLookupDetails = null;
   let lastAnchor = { x: 24, y: 24 };
   let pendingTimer = null;
@@ -164,7 +165,47 @@
     return text ? text.split(/\s+/).filter(Boolean).length : 0;
   }
 
+  function registerActiveHtmlAudio(audio) {
+    if (!audio) {
+      return;
+    }
+
+    activeHtmlAudioElements.push(audio);
+
+    function cleanup() {
+      activeHtmlAudioElements = activeHtmlAudioElements.filter(function (item) {
+        return item !== audio;
+      });
+      audio.removeEventListener("ended", cleanup);
+      audio.removeEventListener("error", cleanup);
+    }
+
+    audio.addEventListener("ended", cleanup);
+    audio.addEventListener("error", cleanup);
+  }
+
+  function stopAllAudioPlayback() {
+    pendingNativeAudioFallback = null;
+
+    if (window.speechSynthesis && typeof window.speechSynthesis.cancel === "function") {
+      window.speechSynthesis.cancel();
+    }
+
+    activeHtmlAudioElements.forEach(function (audio) {
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (error) {
+        pushDebug("audio.stop html failed: " + String(error));
+      }
+    });
+    activeHtmlAudioElements = [];
+
+    sendPycmd("audio:stop");
+  }
+
   function closePopover() {
+    stopAllAudioPlayback();
     closeSubPanel();
     if (!popoverEl) return;
     popoverEl.remove();
@@ -671,6 +712,7 @@
       );
       const audio = new Audio(audioUrl);
       audio.play().then(function () {
+      registerActiveHtmlAudio(audio);
         pushDebug("audio.play success");
       }).catch(function (error) {
         pushDebug("audio.play failed: " + String(error && error.message ? error.message : error));
@@ -679,6 +721,7 @@
         if (alternativeUrl) {
           pushDebug("audio.play retry altUrl=" + shortenForLog(alternativeUrl, 180));
           const alternativeAudio = new Audio(alternativeUrl);
+          registerActiveHtmlAudio(alternativeAudio);
           alternativeAudio.play().then(function () {
             pushDebug("audio.play alt success");
           }).catch(function (altError) {

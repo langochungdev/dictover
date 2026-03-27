@@ -575,6 +575,12 @@ def _run_audio_message(audio_url: str, context: object) -> None:
     )
 
 
+def _run_audio_stop_message() -> None:
+    ok, message = _stop_native_audio_playback()
+    if not ok and "no native stop api available" not in message.lower():
+        print(f"[{ADDON_MODULE}] Cannot stop native audio: {message}")
+
+
 def _play_audio_url_native(audio_url: str) -> tuple[bool, str]:
     url = str(audio_url or "").strip()
     if not url:
@@ -665,6 +671,66 @@ def _play_audio_url_native(audio_url: str) -> tuple[bool, str]:
     if isinstance(result, tuple) and len(result) == 2:
         return result  # type: ignore[return-value]
     return (False, "native playback result unavailable")
+
+
+def _stop_native_audio_playback() -> tuple[bool, str]:
+    try:
+        from aqt import sound as aqt_sound
+    except Exception as error:
+        return (False, f"cannot import aqt.sound: {error}")
+
+    av_player = getattr(aqt_sound, "av_player", None)
+    module_stop = getattr(aqt_sound, "stop", None)
+
+    def _stop_on_main() -> tuple[bool, str]:
+        used = False
+        try:
+            if av_player is not None:
+                stop_and_clear = getattr(av_player, "stop_and_clear_queue", None)
+                if callable(stop_and_clear):
+                    stop_and_clear()
+                    used = True
+
+                clear_queue = getattr(av_player, "clear_queue", None)
+                if callable(clear_queue):
+                    clear_queue()
+                    used = True
+
+                stop = getattr(av_player, "stop", None)
+                if callable(stop):
+                    stop()
+                    used = True
+
+            if callable(module_stop):
+                module_stop()
+                used = True
+        except Exception as error:
+            return (False, f"native stop failed: {error}")
+
+        if used:
+            return (True, "native audio stopped")
+        return (False, "no native stop API available")
+
+    taskman = getattr(mw, "taskman", None)
+    if taskman is None:
+        return _stop_on_main()
+
+    holder: dict[str, object] = {"result": (False, "unknown")}
+    done = threading.Event()
+
+    def _runner() -> None:
+        try:
+            holder["result"] = _stop_on_main()
+        finally:
+            done.set()
+
+    taskman.run_on_main(_runner)
+    if not done.wait(timeout=10):
+        return (False, "native stop timeout")
+    result = holder.get("result")
+    if isinstance(result, tuple) and len(result) == 2:
+        return result  # type: ignore[return-value]
+    return (False, "native stop result unavailable")
 
 
 def on_js_message(handled, message: str, context):
@@ -776,6 +842,10 @@ def on_js_message(handled, message: str, context):
     if message.startswith("audio:play:"):
         audio_url = unquote(message[len("audio:play:") :]).strip()
         _MESSAGE_EXECUTOR.submit(_run_audio_message, audio_url, context)
+        return (True, None)
+
+    if message == "audio:stop":
+        _MESSAGE_EXECUTOR.submit(_run_audio_stop_message)
         return (True, None)
 
     return handled

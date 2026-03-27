@@ -31,8 +31,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "target_language": "vi",
 }
 
-SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh-CN", "ja", "ko", "ru", "fi", "de", "vi"}
-SUPPORTED_TARGET_LANGUAGES = {"en", "zh-CN", "ja", "ko", "ru", "fi", "de", "vi"}
+SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh-CN", "ja", "ko", "ru", "fi", "de", "fr", "vi"}
+SUPPORTED_TARGET_LANGUAGES = {"en", "zh-CN", "ja", "ko", "ru", "fi", "de", "fr", "vi"}
 
 
 def _normalize_source_language(value: object) -> str:
@@ -49,7 +49,7 @@ def _normalize_detected_language(value: str) -> str:
     detected = str(value or "").strip()
     if detected.lower().startswith("zh"):
         return "zh-CN"
-    if detected in {"en", "ja", "ko", "ru", "fi", "de", "vi"}:
+    if detected in {"en", "ja", "ko", "ru", "fi", "de", "fr", "vi"}:
         return detected
     return "en"
 

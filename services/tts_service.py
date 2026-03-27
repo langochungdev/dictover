@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 
 GOOGLE_TTS_ENDPOINT = "https://translate.googleapis.com/translate_tts"
-SUPPORTED_TTS_LANGUAGES = {"en", "zh-CN", "ja", "ko", "ru", "fi", "de", "vi"}
+SUPPORTED_TTS_LANGUAGES = {"en", "zh-CN", "ja", "ko", "ru", "fi", "de", "fr", "vi"}
 
 
 def normalize_tts_language(language: str) -> str:

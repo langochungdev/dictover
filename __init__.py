@@ -43,6 +43,7 @@ DEFAULT_RUNTIME_SETTINGS = {
 
 INSTALL_PING_URL = "https://langochung.me/api/ping/dictover"
 INSTALL_PING_MARKER = ADDON_DIR / ".install_ping_v1.json"
+INSTALL_PING_STATE_KEY = "_install_ping"
 
 _MESSAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="apl-worker")
 
@@ -62,6 +63,54 @@ def _read_install_ping_marker() -> dict[str, object]:
     if not isinstance(payload, dict):
         return {}
     return payload
+
+
+def _is_install_ping_disabled() -> bool:
+    payload = _load_raw_config_file()
+    raw_value = payload.get("disable_install_ping") if isinstance(payload, dict) else None
+    return _coerce_bool(raw_value, False)
+
+
+def _read_install_ping_state() -> dict[str, object]:
+    config = _get_runtime_config()
+    if not isinstance(config, dict):
+        return {}
+
+    state = config.get(INSTALL_PING_STATE_KEY)
+    if isinstance(state, dict):
+        return state
+    return {}
+
+
+def _write_install_ping_state(state: dict[str, object]) -> None:
+    config = _get_runtime_config()
+    config[INSTALL_PING_STATE_KEY] = state
+    try:
+        mw.addonManager.writeConfig(__name__, config)
+    except Exception as error:
+        print(f"[{ADDON_MODULE}] Cannot persist install ping state: {error}")
+
+
+def _is_install_ping_attempted(state: dict[str, object]) -> bool:
+    raw = state.get("attempted")
+    if isinstance(raw, bool):
+        return raw
+    text = str(raw or "").strip().lower()
+    return text in {"1", "true", "yes", "on"}
+
+
+def _mark_install_ping_attempted(marker_payload: dict[str, object], status: str = "pending") -> None:
+    state = _read_install_ping_state()
+    state.update(
+        {
+            "attempted": True,
+            "install_id": str(marker_payload.get("install_id") or state.get("install_id") or ""),
+            "created_at": int(marker_payload.get("created_at") or state.get("created_at") or int(time.time())),
+            "status": str(status or state.get("status") or "pending"),
+            "updated_at": int(time.time()),
+        }
+    )
+    _write_install_ping_state(state)
 
 
 def _send_install_ping_once(marker_payload: dict[str, object]) -> None:
@@ -105,14 +154,37 @@ def _send_install_ping_once(marker_payload: dict[str, object]) -> None:
     except Exception as error:
         print(f"[{ADDON_MODULE}] Cannot update install ping marker: {error}")
 
+    state = _read_install_ping_state()
+    state.update(
+        {
+            "attempted": True,
+            "install_id": str(marker_payload.get("install_id") or state.get("install_id") or ""),
+            "created_at": int(marker_payload.get("created_at") or state.get("created_at") or int(time.time())),
+            "sent_at": int(marker_payload.get("sent_at") or int(time.time())),
+            "status": "ok" if ok else "error",
+            "http_status": status,
+            "error": error_message,
+            "updated_at": int(time.time()),
+        }
+    )
+    _write_install_ping_state(state)
+
 
 def _ensure_install_ping_once() -> None:
+    if _is_install_ping_disabled():
+        return
+
+    install_ping_state = _read_install_ping_state()
+    if _is_install_ping_attempted(install_ping_state):
+        return
+
     marker_payload: dict[str, object]
 
     if INSTALL_PING_MARKER.exists():
         existing = _read_install_ping_marker()
         status = str(existing.get("status", "")).strip().lower()
         if status == "ok":
+            _mark_install_ping_attempted(existing, status="ok")
             return
 
         marker_payload = {
@@ -134,6 +206,9 @@ def _ensure_install_ping_once() -> None:
     except Exception as error:
         print(f"[{ADDON_MODULE}] Cannot create install ping marker: {error}")
         return
+
+    # Mark as attempted before background send so addon updates do not ping again.
+    _mark_install_ping_attempted(marker_payload, status="pending")
 
     threading.Thread(
         target=_send_install_ping_once,

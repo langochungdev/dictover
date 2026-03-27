@@ -27,6 +27,7 @@ SUPPORTED_SOURCE_LANGUAGES = {
     "ru",
     "fi",
     "de",
+    "fr",
     "vi",
 }
 
@@ -38,6 +39,7 @@ SUPPORTED_TARGET_LANGUAGES = {
     "ru",
     "fi",
     "de",
+    "fr",
     "vi",
 }
 
@@ -93,7 +95,7 @@ def handle_translate(phrase: str) -> dict[str, str]:
             detected = translation_service.detect_language(original)
             if detected.lower().startswith("zh"):
                 tts_language = "zh-CN"
-            elif detected in {"en", "ja", "ko", "ru", "fi", "de", "vi"}:
+            elif detected in {"en", "ja", "ko", "ru", "fi", "de", "fr", "vi"}:
                 tts_language = detected
             else:
                 tts_language = "en"

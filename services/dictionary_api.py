@@ -25,6 +25,7 @@ LANGUAGE_TO_WIKTIONARY_KEY = {
     "ru": "ru",
     "fi": "fi",
     "de": "de",
+    "fr": "fr",
     "vi": "vi",
 }
 LANGUAGE_TO_WIKTIONARY_DOMAIN = {
@@ -35,6 +36,7 @@ LANGUAGE_TO_WIKTIONARY_DOMAIN = {
     "ru": "ru",
     "fi": "fi",
     "de": "de",
+    "fr": "fr",
     "vi": "vi",
 }
 

@@ -171,6 +171,7 @@ def _enable_local_debug_popup(target_root: Path) -> tuple[bool, str]:
             payload = {}
 
     payload["debug_panel_always_visible"] = True
+    payload["disable_install_ping"] = True
 
     try:
         config_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

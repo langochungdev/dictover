@@ -71,6 +71,7 @@
     { code: "ru", label: "Tiếng Nga" },
     { code: "fi", label: "Tiếng Phần Lan" },
     { code: "de", label: "Tiếng Đức" },
+    { code: "fr", label: "Tiếng Pháp" },
     { code: "vi", label: "Tiếng Việt" },
   ];
   const AUTO_DETECT_LANGUAGE = { code: "auto", label: "Tự nhận diện" };

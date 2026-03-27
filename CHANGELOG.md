@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/OWNER/REPO/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/OWNER/REPO/releases/tag/v0.1.0
 
+## v0.3.0 (2026-03-27)
+
+### Feat
+
+- Enhance loading dots styling and animation for improved visibility
+- Add loading dots component and integrate into loading states
+- Change default source language to 'auto' and update related settings
+- Update popover shortcut from 'Alt+1' to 'Shift' and adjust related settings
+- Implement audio stop functionality and manage active HTML audio elements
+- Add French language support across various components
+
 ## v0.2.0 (2026-03-27)
 
 ### Feat

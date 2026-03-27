@@ -368,7 +368,7 @@ def _build_settings_payload() -> dict:
 
 def _load_translation_config() -> dict[str, str]:
     config_path = ADDON_DIR / "config.json"
-    defaults = {"source_language": "en", "target_language": "vi"}
+    defaults = {"source_language": "auto", "target_language": "vi"}
 
     if not config_path.exists():
         return defaults
@@ -390,7 +390,7 @@ def _load_translation_config() -> dict[str, str]:
 def _save_translation_config(source_language: str, target_language: str) -> None:
     current_payload = _load_raw_config_file()
 
-    current_payload["source_language"] = str(source_language or "en")
+    current_payload["source_language"] = str(source_language or "auto")
     current_payload["target_language"] = str(target_language or "vi")
 
     try:
@@ -420,7 +420,7 @@ def _save_all_settings_to_config_file(
     payload = _load_raw_config_file()
 
     if source_language is not None:
-        payload["source_language"] = str(source_language or "en")
+        payload["source_language"] = str(source_language or "auto")
     if target_language is not None:
         payload["target_language"] = str(target_language or "vi")
 
@@ -766,7 +766,7 @@ def on_js_message(handled, message: str, context):
         target_language: str | None = None
         incoming_languages = payload.get("languages", {})
         if isinstance(incoming_languages, dict):
-            source_language = str(incoming_languages.get("source_language", "en") or "en")
+            source_language = str(incoming_languages.get("source_language", "auto") or "auto")
             target_language = str(incoming_languages.get("target_language", "vi") or "vi")
 
         saved_settings = _save_runtime_settings(payload)

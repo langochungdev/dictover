@@ -40,7 +40,7 @@
   };
 
   const settingsState = {
-    languages: { source_language: "en", target_language: "vi" },
+    languages: { source_language: "auto", target_language: "vi" },
     popover: {
       trigger_mode: "auto",
       shortcut_combo: "Shift",
@@ -65,17 +65,120 @@
   const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
   const DEFAULT_SHORTCUT_COMBO = "Shift";
   const SUPPORTED_LANGUAGES = [
-    { code: "en", label: "Tiếng Anh" },
-    { code: "zh-CN", label: "Tiếng Trung" },
-    { code: "ja", label: "Tiếng Nhật" },
-    { code: "ko", label: "Tiếng Hàn" },
-    { code: "ru", label: "Tiếng Nga" },
-    { code: "fi", label: "Tiếng Phần Lan" },
-    { code: "de", label: "Tiếng Đức" },
-    { code: "fr", label: "Tiếng Pháp" },
-    { code: "vi", label: "Tiếng Việt" },
+    { code: "en", label: "English" },
+    { code: "zh-CN", label: "Chinese" },
+    { code: "ja", label: "Japanese" },
+    { code: "ko", label: "Korean" },
+    { code: "ru", label: "Russian" },
+    { code: "fi", label: "Finnish" },
+    { code: "de", label: "German" },
+    { code: "fr", label: "French" },
+    { code: "vi", label: "Vietnamese" },
   ];
-  const AUTO_DETECT_LANGUAGE = { code: "auto", label: "Tự nhận diện" };
+  const AUTO_DETECT_LANGUAGE = { code: "auto", label: "Auto Detect" };
+  const SETTINGS_UI_COPY = {
+    en: {
+      input_language: "Input language",
+      output_language: "Output language",
+      swap_languages_aria: "Swap input and output language",
+      trigger_auto: "auto translate when selecting text",
+      trigger_shortcut: "translate when pressing shortcut",
+      shortcut_label: "Shortcut",
+      shortcut_placeholder: "Press shortcut",
+      shortcut_hint:
+        "Select this field and press a key or key combination, for example: Shift, Alt+1, Ctrl+Shift+L.",
+      auto_play_audio: "auto play audio",
+    },
+    vi: {
+      input_language: "Ngôn ngữ vào",
+      output_language: "Ngôn ngữ ra",
+      swap_languages_aria: "Đổi qua lại ngôn ngữ vào và ra",
+      trigger_auto: "tự động dịch khi bôi",
+      trigger_shortcut: "dịch khi bấm phím",
+      shortcut_label: "Phím tắt",
+      shortcut_placeholder: "Nhấn tổ hợp phím",
+      shortcut_hint: "Chọn ô rồi nhấn trực tiếp phím hoặc tổ hợp phím, ví dụ: Shift, Alt+1, Ctrl+Shift+L.",
+      auto_play_audio: "tự động phát audio",
+    },
+    "zh-CN": {
+      input_language: "输入语言",
+      output_language: "输出语言",
+      swap_languages_aria: "交换输入和输出语言",
+      trigger_auto: "选中文本后自动翻译",
+      trigger_shortcut: "按快捷键时翻译",
+      shortcut_label: "快捷键",
+      shortcut_placeholder: "按下快捷键",
+      shortcut_hint: "点击此输入框后直接按键或组合键，例如：Shift、Alt+1、Ctrl+Shift+L。",
+      auto_play_audio: "自动播放音频",
+    },
+    ja: {
+      input_language: "入力言語",
+      output_language: "出力言語",
+      swap_languages_aria: "入力言語と出力言語を入れ替える",
+      trigger_auto: "テキスト選択時に自動翻訳",
+      trigger_shortcut: "ショートカットキーで翻訳",
+      shortcut_label: "ショートカット",
+      shortcut_placeholder: "ショートカットを押す",
+      shortcut_hint: "この欄を選択してキーまたはキーの組み合わせを押してください。例: Shift、Alt+1、Ctrl+Shift+L。",
+      auto_play_audio: "音声を自動再生",
+    },
+    ko: {
+      input_language: "입력 언어",
+      output_language: "출력 언어",
+      swap_languages_aria: "입력 언어와 출력 언어 바꾸기",
+      trigger_auto: "텍스트를 선택하면 자동 번역",
+      trigger_shortcut: "단축키를 누르면 번역",
+      shortcut_label: "단축키",
+      shortcut_placeholder: "단축키를 누르세요",
+      shortcut_hint: "이 입력칸을 선택한 뒤 키 또는 키 조합을 눌러 주세요. 예: Shift, Alt+1, Ctrl+Shift+L.",
+      auto_play_audio: "오디오 자동 재생",
+    },
+    ru: {
+      input_language: "Язык ввода",
+      output_language: "Язык вывода",
+      swap_languages_aria: "Поменять местами язык ввода и вывода",
+      trigger_auto: "автоперевод при выделении текста",
+      trigger_shortcut: "перевод по горячей клавише",
+      shortcut_label: "Горячая клавиша",
+      shortcut_placeholder: "Нажмите сочетание клавиш",
+      shortcut_hint: "Выберите это поле и нажмите клавишу или сочетание клавиш, например: Shift, Alt+1, Ctrl+Shift+L.",
+      auto_play_audio: "автовоспроизведение аудио",
+    },
+    fi: {
+      input_language: "Syottokieli",
+      output_language: "Kohdekieli",
+      swap_languages_aria: "Vaihda syotto- ja kohdekieli keskenaan",
+      trigger_auto: "kaanna automaattisesti tekstia valittaessa",
+      trigger_shortcut: "kaanna pikanappaimella",
+      shortcut_label: "Pikanappain",
+      shortcut_placeholder: "Paina pikanappainta",
+      shortcut_hint: "Valitse tama kentta ja paina nappainta tai nappainyhdistelmaa, esimerkiksi: Shift, Alt+1, Ctrl+Shift+L.",
+      auto_play_audio: "toista audio automaattisesti",
+    },
+    de: {
+      input_language: "Eingabesprache",
+      output_language: "Zielsprache",
+      swap_languages_aria: "Eingabe- und Zielsprache tauschen",
+      trigger_auto: "automatisch beim Markieren ubersetzen",
+      trigger_shortcut: "beim Drucken des Kurzbefehls ubersetzen",
+      shortcut_label: "Kurzbefehl",
+      shortcut_placeholder: "Kurzbefehl drucken",
+      shortcut_hint: "Wahlen Sie dieses Feld und drucken Sie eine Taste oder Tastenkombination, z. B.: Shift, Alt+1, Ctrl+Shift+L.",
+      auto_play_audio: "Audio automatisch abspielen",
+    },
+    fr: {
+      input_language: "Langue source",
+      output_language: "Langue cible",
+      swap_languages_aria: "Inverser la langue source et la langue cible",
+      trigger_auto: "traduction automatique lors de la selection du texte",
+      trigger_shortcut: "traduire avec le raccourci clavier",
+      shortcut_label: "Raccourci",
+      shortcut_placeholder: "Appuyez sur le raccourci",
+      shortcut_hint:
+        "Selectionnez ce champ puis appuyez sur une touche ou combinaison, par exemple: Shift, Alt+1, Ctrl+Shift+L.",
+      auto_play_audio: "lecture audio automatique",
+    },
+  };
   const RESOURCE_TIMEOUT_SECONDS = {
     argostranslate: 75,
     language_pack: 300,
@@ -1097,7 +1200,7 @@
     const nowTs = Date.now();
 
     const incomingState = {
-      source_language: String(incomingLanguages.source_language || "en"),
+      source_language: String(incomingLanguages.source_language || "auto"),
       target_language: String(incomingLanguages.target_language || "vi"),
       trigger_mode: incomingSettings.popover_trigger_mode === "shortcut" ? "shortcut" : "auto",
       shortcut_combo: normalizeShortcutCombo(incomingSettings.popover_shortcut || DEFAULT_SHORTCUT_COMBO),
@@ -1162,6 +1265,7 @@
     settingsLoaded = true;
 
     if (settingsModalEl && !settingsModalEl.classList.contains("apl-settings-root--hidden")) {
+      renderSettingsModal();
       syncSettingsFormIfOpen();
     } else if (settingsModalEl) {
       renderSettingsModal();
@@ -1461,8 +1565,11 @@
     const hasSelectedCode = SUPPORTED_LANGUAGES.some(function (item) {
       return item.code === selectedCode;
     });
-    const canSelectAutoDetect = includeAutoDetect && selectedCode === AUTO_DETECT_LANGUAGE.code;
-    const resolvedSelectedCode = hasSelectedCode ? selectedCode : canSelectAutoDetect ? AUTO_DETECT_LANGUAGE.code : "en";
+    const resolvedSelectedCode = hasSelectedCode
+      ? selectedCode
+      : includeAutoDetect
+        ? AUTO_DETECT_LANGUAGE.code
+        : "en";
 
     const autoDetectOption = includeAutoDetect
       ? '<option value="' + AUTO_DETECT_LANGUAGE.code + '"' +
@@ -1486,10 +1593,30 @@
     return settingsState.popover.trigger_mode === mode ? " checked" : "";
   }
 
+  function getSettingsUiCopy() {
+    const targetLanguage = String(settingsState.languages.target_language || "en");
+
+    if (SETTINGS_UI_COPY[targetLanguage]) {
+      return SETTINGS_UI_COPY[targetLanguage];
+    }
+
+    if (targetLanguage.toLowerCase().indexOf("zh") === 0) {
+      return SETTINGS_UI_COPY["zh-CN"];
+    }
+
+    if (targetLanguage.toLowerCase().indexOf("vi") === 0) {
+      return SETTINGS_UI_COPY.vi;
+    }
+
+    return SETTINGS_UI_COPY.en;
+  }
+
   function renderSettingsModal() {
     if (!settingsModalEl) {
       return;
     }
+
+    const uiCopy = getSettingsUiCopy();
 
     const errorHtml = settingsMessage
       ? '<div class="apl-settings-error">' + escapeHtml(settingsMessage) + "</div>"
@@ -1503,11 +1630,17 @@
       '<div class="apl-settings-modal">' +
       '<div class="apl-settings-section">' +
       '<div class="apl-settings-language-row">' +
-      '<label class="apl-settings-field"><span>Ngôn ngữ vào</span>' +
+      '<label class="apl-settings-field"><span>' +
+      escapeHtml(uiCopy.input_language) +
+      "</span>" +
       languageSelectHtml("apl-settings-source-language", settingsState.languages.source_language, true) +
       "</label>" +
-      '<button class="apl-button apl-settings-swap-languages" type="button" aria-label="Đổi qua lại ngôn ngữ vào và ra">↔</button>' +
-      '<label class="apl-settings-field"><span>Ngôn ngữ ra</span>' +
+      '<button class="apl-button apl-settings-swap-languages" type="button" aria-label="' +
+      escapeHtml(uiCopy.swap_languages_aria) +
+      '">↔</button>' +
+      '<label class="apl-settings-field"><span>' +
+      escapeHtml(uiCopy.output_language) +
+      "</span>" +
       languageSelectHtml("apl-settings-target-language", settingsState.languages.target_language, false) +
       "</label>" +
       "</div>" +
@@ -1515,29 +1648,41 @@
       '<div class="apl-settings-section">' +
       '<label class="apl-settings-radio"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="auto"' +
       triggerModeChecked("auto") +
-      '> tự động dịch khi bôi</label>' +
+      "> " +
+      escapeHtml(uiCopy.trigger_auto) +
+      "</label>" +
       '<div class="apl-settings-radio-shortcut-row">' +
       '<label class="apl-settings-radio apl-settings-radio--inline"><input class="apl-settings-trigger-mode" type="radio" name="apl-trigger-mode" value="shortcut"' +
       triggerModeChecked("shortcut") +
-      '> dịch khi bấm phím</label>' +
+      "> " +
+      escapeHtml(uiCopy.trigger_shortcut) +
+      "</label>" +
       '<div class="apl-settings-shortcut-group">' +
-      '<label class="apl-settings-field apl-settings-field--shortcut-inline"><span>Phím tắt</span>' +
+      '<label class="apl-settings-field apl-settings-field--shortcut-inline"><span>' +
+      escapeHtml(uiCopy.shortcut_label) +
+      "</span>" +
       '<input class="apl-settings-shortcut-input" type="text" readonly value="' +
       escapeHtml(settingsState.popover.shortcut_combo) +
       '"' +
       shortcutDisabledAttr +
-      ' placeholder="Nhấn tổ hợp phím" />' +
+      ' placeholder="' +
+      escapeHtml(uiCopy.shortcut_placeholder) +
+      '" />' +
       "</label>" +
       "</div>" +
       "</div>" +
       '<div class="apl-settings-shortcut-group">' +
-      '<div class="apl-settings-hint">Chọn ô rồi nhấn trực tiếp phím hoặc tổ hợp phím, ví dụ: Shift, Alt+1, Ctrl+Shift+L.</div>' +
+      '<div class="apl-settings-hint">' +
+      escapeHtml(uiCopy.shortcut_hint) +
+      "</div>" +
       "</div>" +
       "</div>" +
       '<div class="apl-settings-section">' +
       '<label class="apl-settings-toggle"><input class="apl-settings-auto-play-audio" type="checkbox"' +
       (settingsState.popover.auto_play_audio ? " checked" : "") +
-      '"> tự động phát audio</label>' +
+      '"> ' +
+      escapeHtml(uiCopy.auto_play_audio) +
+      "</label>" +
       "</div>" +
       errorHtml +
       "</div>" +
@@ -1632,7 +1777,7 @@
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
     const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
 
-    const sourceLanguage = sourceSelect ? String(sourceSelect.value || "en") : settingsState.languages.source_language;
+    const sourceLanguage = sourceSelect ? String(sourceSelect.value || "auto") : settingsState.languages.source_language;
     const targetLanguage = targetSelect ? String(targetSelect.value || "vi") : settingsState.languages.target_language;
     const triggerMode = triggerModeInput ? String(triggerModeInput.value || "auto") : settingsState.popover.trigger_mode;
     const shortcutCombo = normalizeShortcutCombo(shortcutInput ? shortcutInput.value : settingsState.popover.shortcut_combo);
@@ -1744,10 +1889,12 @@
         if (!sourceSelect || !targetSelect) {
           return;
         }
-        const previousSource = String(sourceSelect.value || "en");
+        const previousSource = String(sourceSelect.value || "auto");
         sourceSelect.value = String(targetSelect.value || "vi");
         targetSelect.value = previousSource === "auto" ? "en" : previousSource;
         persistSettingsNow();
+        renderSettingsModal();
+        syncSettingsFormIfOpen();
       });
     }
 
@@ -1756,7 +1903,11 @@
     }
 
     if (targetSelect) {
-      targetSelect.addEventListener("change", persistSettingsNow);
+      targetSelect.addEventListener("change", function () {
+        persistSettingsNow();
+        renderSettingsModal();
+        syncSettingsFormIfOpen();
+      });
     }
 
     if (autoPlayInput) {

@@ -2824,10 +2824,15 @@
       '<div class="apl-settings-modal">' +
       '<div class="apl-settings-header">' +
       '<div class="apl-settings-brand">' +
+      '<a class="apl-settings-avatar-link" href="https://langochung.me" target="_blank" rel="noopener noreferrer" aria-label="Open langochung.me">' +
       '<img class="apl-settings-avatar" src="' +
       avatarUrl +
       '" alt="Cat avatar" />' +
+      "</a>" +
+      '<div class="apl-settings-brand-meta">' +
       '<a class="apl-settings-site-link" href="https://langochung.me" target="_blank" rel="noopener noreferrer">langochung.me</a>' +
+      '<span class="apl-settings-support-note">&lt;- báo lỗi và yêu cầu feature qua chatbox icon con mèo</span>' +
+      "</div>" +
       "</div>" +
       '<button class="apl-button apl-settings-close" type="button" aria-label="Close settings">✕</button>' +
       "</div>" +

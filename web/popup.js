@@ -23,12 +23,15 @@
   let settingsTriggerHoverListenerBound = false;
   let settingsProgressTickerId = null;
   let subPanelEl = null;
+  let subPanelType = "";
   let pendingCommandToken = 0;
   let pendingSelectionAction = null;
   let activeCommandMeta = null;
   let pendingNativeAudioFallback = null;
   let activeHtmlAudioElements = [];
   let lastLookupDetails = null;
+  let imagePanelRequestSeq = 0;
+  const imageSearchCache = new Map();
   let lastAnchor = { x: 24, y: 24 };
   let pendingTimer = null;
   const debugLines = [];
@@ -187,6 +190,10 @@
     closed: "▸",
     open: "▾",
   };
+  const IMAGE_PAGE_SIZE = 24;
+  const IMAGE_SCROLL_THRESHOLD_PX = 260;
+  const IMAGE_CACHE_TTL_MS = 8 * 60 * 1000;
+  const IMAGE_FETCH_TIMEOUT_MS = 2200;
   const AUDIO_ICON_SVG =
     '<svg class="apl-audio-icon" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">' +
     '<g fill="none" fill-rule="evenodd" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">' +
@@ -195,6 +202,13 @@
     '<path d="M10.5 9.5v2"/>' +
     '<path d="M12.5 7.5v6.814"/>' +
     '<path d="M14.5 4.5v12"/>' +
+    "</g></svg>";
+  const IMAGE_ICON_SVG =
+    '<svg class="apl-image-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">' +
+    '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">' +
+    '<rect x="2.8" y="4" width="14.4" height="12" rx="2"/>' +
+    '<circle cx="7.2" cy="8" r="1.3"/>' +
+    '<path d="M4.8 14l3.6-3.8 2.8 2.8 2.4-2.3 2.4 3.3"/>' +
     "</g></svg>";
   const DEBUG_PANEL_ALWAYS_VISIBLE =
     window.__aplDebugPanelAlwaysVisible === true ||
@@ -332,12 +346,32 @@
     }
   }
 
+  function syncImageToggleState(expanded) {
+    if (!popoverEl) {
+      return;
+    }
+
+    const imageToggle = popoverEl.querySelector(".apl-image-toggle");
+    if (!imageToggle) {
+      return;
+    }
+
+    imageToggle.setAttribute("aria-pressed", expanded ? "true" : "false");
+    if (expanded) {
+      imageToggle.classList.add("apl-image-toggle--active");
+    } else {
+      imageToggle.classList.remove("apl-image-toggle--active");
+    }
+  }
+
   function closeSubPanel() {
     if (subPanelEl) {
       subPanelEl.remove();
       subPanelEl = null;
     }
+    subPanelType = "";
     syncDetailsToggleState(false);
+    syncImageToggleState(false);
   }
 
   function closeSettingsModal() {
@@ -679,6 +713,16 @@
     fitSubPanelToViewport(panel);
   }
 
+  function placeImageSubPanel(panel) {
+    if (!panel || !popoverEl) {
+      return;
+    }
+    panel.style.removeProperty("width");
+    panel.style.removeProperty("height");
+    panel.style.removeProperty("max-height");
+    placeSubPanel(panel);
+  }
+
   function fitSubPanelToViewport(panel) {
     if (!panel) {
       return;
@@ -725,9 +769,565 @@
       "</div>";
 
     document.body.appendChild(panel);
+    panel.setAttribute("data-panel-type", "definition");
     subPanelEl = panel;
+    subPanelType = "definition";
     placeSubPanel(panel);
     syncDetailsToggleState(true);
+    syncImageToggleState(false);
+  }
+
+  function normalizeImageQuery(value) {
+    const compact = String(value || "").replace(/\s+/g, " ").trim();
+    if (!compact) {
+      return "";
+    }
+
+    const words = compact.split(" ").slice(0, 8);
+    return words.join(" ").slice(0, 80).trim();
+  }
+
+  function resolveImageQuery(data) {
+    if (!data || typeof data !== "object") {
+      return "";
+    }
+
+    if (data.type === "lookup") {
+      return normalizeImageQuery(data.word || "");
+    }
+
+    if (data.type === "translate") {
+      return normalizeImageQuery(data.original || "");
+    }
+
+    return "";
+  }
+
+  function getCachedImageRecord(query) {
+    const record = imageSearchCache.get(query);
+    if (!record) {
+      return null;
+    }
+
+    if (Date.now() - Number(record.cachedAt || 0) > IMAGE_CACHE_TTL_MS) {
+      imageSearchCache.delete(query);
+      return null;
+    }
+
+    return {
+      options: Array.isArray(record.options) ? record.options : [],
+      nextPage:
+        Number(record.nextPage || 0) > 0
+          ? Number(record.nextPage)
+          : null,
+    };
+  }
+
+  function setCachedImageRecord(query, options, nextPage) {
+    imageSearchCache.set(query, {
+      cachedAt: Date.now(),
+      options: Array.isArray(options) ? options : [],
+      nextPage: Number(nextPage || 0) > 0 ? Number(nextPage) : null,
+    });
+  }
+
+  function parseOpenverseOptions(payload) {
+    const results = payload && Array.isArray(payload.results) ? payload.results : [];
+    const options = results
+      .map(function (item) {
+        const src = String(item && item.url ? item.url : "").trim();
+        if (!src) {
+          return null;
+        }
+
+        return {
+          src: src,
+          source: "Openverse",
+          title: String(item.title || "").trim() || "Image",
+          pageUrl: String(item.foreign_landing_url || src).trim(),
+        };
+      })
+      .filter(Boolean);
+
+    const page = Math.max(1, Number(payload && payload.page ? payload.page : 1));
+    const pageCount = Math.max(page, Number(payload && payload.page_count ? payload.page_count : page));
+    const nextPage = page < pageCount ? page + 1 : null;
+
+    return {
+      options: options,
+      nextPage: nextPage,
+    };
+  }
+
+  function fetchOpenverseImageOptions(query, page) {
+    const normalized = normalizeImageQuery(query);
+    if (!normalized) {
+      return Promise.resolve({ options: [], nextPage: null });
+    }
+
+    const safePage = Math.max(1, Number(page || 1));
+    const url =
+      "https://api.openverse.org/v1/images/?q=" +
+      encodeURIComponent(normalized) +
+      "&page_size=" +
+      String(IMAGE_PAGE_SIZE) +
+      "&page=" +
+      String(safePage);
+
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const request = {
+      cache: "force-cache",
+    };
+    if (controller) {
+      request.signal = controller.signal;
+    }
+
+    return new Promise(function (resolve, reject) {
+      const timeoutId = window.setTimeout(function () {
+        if (controller) {
+          controller.abort();
+        }
+        reject(new Error("openverse_timeout"));
+      }, IMAGE_FETCH_TIMEOUT_MS);
+
+      fetch(url, request)
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("openverse_http_" + String(response.status));
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          window.clearTimeout(timeoutId);
+          resolve(parseOpenverseOptions(payload));
+        })
+        .catch(function (error) {
+          window.clearTimeout(timeoutId);
+          reject(error);
+        });
+    });
+  }
+
+  function parseWikimediaOptions(payload) {
+    const pages = payload && payload.query && payload.query.pages ? payload.query.pages : null;
+    if (!pages || typeof pages !== "object") {
+      return [];
+    }
+
+    return Object.keys(pages)
+      .map(function (key) {
+        const page = pages[key] || {};
+        const imageInfo = Array.isArray(page.imageinfo) ? page.imageinfo[0] : null;
+        const src = String((imageInfo && (imageInfo.thumburl || imageInfo.url)) || "").trim();
+        if (!src) {
+          return null;
+        }
+
+        const title = String(page.title || "").replace(/^File:/i, "").replace(/_/g, " ").trim();
+        const pageUrl =
+          String((imageInfo && imageInfo.descriptionurl) || page.fullurl || src || "").trim();
+
+        return {
+          src: src,
+          source: "Wikimedia",
+          title: title,
+          pageUrl: pageUrl,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function fetchWikimediaImageOptions(query) {
+    const normalized = normalizeImageQuery(query);
+    if (!normalized) {
+      return Promise.resolve([]);
+    }
+
+    const search = encodeURIComponent(normalized + " filetype:jpg OR filetype:png OR filetype:webp");
+    const url =
+      "https://commons.wikimedia.org/w/api.php?origin=*&action=query&format=json&generator=search" +
+      "&gsrnamespace=6&gsrlimit=8&gsrsearch=" +
+      search +
+      "&prop=imageinfo|info&iiprop=url&iiurlwidth=640&iiurlheight=360&inprop=url";
+
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const request = {
+      cache: "force-cache",
+    };
+    if (controller) {
+      request.signal = controller.signal;
+    }
+
+    return new Promise(function (resolve, reject) {
+      const timeoutId = window.setTimeout(function () {
+        if (controller) {
+          controller.abort();
+        }
+        reject(new Error("image_search_timeout"));
+      }, IMAGE_FETCH_TIMEOUT_MS);
+
+      fetch(url, request)
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("image_search_http_" + String(response.status));
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          window.clearTimeout(timeoutId);
+          resolve(parseWikimediaOptions(payload));
+        })
+        .catch(function (error) {
+          window.clearTimeout(timeoutId);
+          reject(error);
+        });
+    });
+  }
+
+  function mergeImageOptions(primary, fallback) {
+    const output = [];
+    const seen = Object.create(null);
+
+    function append(list) {
+      (Array.isArray(list) ? list : []).forEach(function (item) {
+        const src = String(item && item.src ? item.src : "").trim();
+        if (!src || seen[src]) {
+          return;
+        }
+        seen[src] = true;
+        output.push({
+          src: src,
+          source: String(item.source || "Web"),
+          title: String(item.title || "Image"),
+          pageUrl: String(item.pageUrl || src),
+        });
+      });
+    }
+
+    append(primary);
+    append(fallback);
+    return output;
+  }
+
+  function renderImageCards(options, query, startIndex) {
+    const list = Array.isArray(options) ? options : [];
+    const offset = Math.max(0, Number(startIndex || 0));
+    return list
+      .map(function (item, index) {
+        const src = escapeHtml(item.src || "");
+        const link = escapeHtml(item.pageUrl || item.src || "");
+        const title = escapeHtml(item.title || query || "Image");
+        const absoluteIndex = offset + index;
+        const loadingMode = absoluteIndex < 4 ? "eager" : "lazy";
+        const fetchPriority = absoluteIndex < 4 ? "high" : "low";
+
+        return (
+          '<a class="apl-image-card" href="' +
+          link +
+          '" target="_blank" rel="noopener noreferrer">' +
+          '<img class="apl-image-thumb" src="' +
+          src +
+          '" alt="' +
+          title +
+          '" loading="' +
+          loadingMode +
+          '" decoding="async" fetchpriority="' +
+          fetchPriority +
+          '" />' +
+          "</a>"
+        );
+      })
+      .join("");
+  }
+
+  function panelRequestMatches(panel, requestSeq, query) {
+    if (!panel || !subPanelEl || panel !== subPanelEl) {
+      return false;
+    }
+    if (subPanelType !== "images") {
+      return false;
+    }
+    if (panel.getAttribute("data-image-request-seq") !== String(requestSeq)) {
+      return false;
+    }
+    return panel.getAttribute("data-image-query") === query;
+  }
+
+  function ensureImageResultsStructure(panel) {
+    const target = panel ? panel.querySelector(".apl-image-results") : null;
+    if (!target) {
+      return null;
+    }
+
+    let grid = target.querySelector(".apl-image-grid");
+    let status = target.querySelector(".apl-image-status");
+
+    if (!grid || !status) {
+      target.innerHTML = '<div class="apl-image-grid"></div><div class="apl-image-status" hidden></div>';
+      grid = target.querySelector(".apl-image-grid");
+      status = target.querySelector(".apl-image-status");
+    }
+
+    return {
+      target: target,
+      grid: grid,
+      status: status,
+    };
+  }
+
+  function setImageStatus(panel, message, isError) {
+    const structure = ensureImageResultsStructure(panel);
+    if (!structure || !structure.status) {
+      return;
+    }
+
+    const text = String(message || "").trim();
+    if (!text) {
+      structure.status.setAttribute("hidden", "hidden");
+      structure.status.textContent = "";
+      structure.status.classList.remove("apl-image-status--error");
+      return;
+    }
+
+    structure.status.textContent = text;
+    structure.status.removeAttribute("hidden");
+    if (isError) {
+      structure.status.classList.add("apl-image-status--error");
+    } else {
+      structure.status.classList.remove("apl-image-status--error");
+    }
+  }
+
+  function appendImageCards(panel, query, options, reset) {
+    const structure = ensureImageResultsStructure(panel);
+    if (!structure || !structure.grid) {
+      return 0;
+    }
+
+    if (reset || !panel.__aplImageSeen || !panel.__aplImageItems) {
+      panel.__aplImageSeen = Object.create(null);
+      panel.__aplImageItems = [];
+      structure.grid.innerHTML = "";
+    }
+
+    const seen = panel.__aplImageSeen;
+    const items = panel.__aplImageItems;
+    const incoming = Array.isArray(options) ? options : [];
+    const unique = [];
+
+    incoming.forEach(function (item) {
+      const src = String(item && item.src ? item.src : "").trim();
+      if (!src || seen[src]) {
+        return;
+      }
+      seen[src] = true;
+      const normalizedItem = {
+        src: src,
+        source: String(item.source || "Web"),
+        title: String(item.title || query || "Image"),
+        pageUrl: String(item.pageUrl || src),
+      };
+      unique.push(normalizedItem);
+      items.push(normalizedItem);
+    });
+
+    if (unique.length === 0) {
+      return 0;
+    }
+
+    structure.grid.insertAdjacentHTML("beforeend", renderImageCards(unique, query, items.length - unique.length));
+    return unique.length;
+  }
+
+  function resetImagePanelState(panel, query) {
+    panel.setAttribute("data-image-query", query);
+    panel.setAttribute("data-image-next-page", "1");
+    panel.setAttribute("data-image-has-more", "1");
+    panel.setAttribute("data-image-loading", "0");
+    appendImageCards(panel, query, [], true);
+    setImageStatus(panel, "", false);
+  }
+
+  function requestImageSearchViaPython(query, page, includeWikimedia, requestSeq) {
+    const payload = {
+      query: String(query || ""),
+      page: Math.max(1, Number(page || 1)),
+      page_size: IMAGE_PAGE_SIZE,
+      include_wikimedia: Boolean(includeWikimedia),
+      request_seq: Math.max(0, Number(requestSeq || 0)),
+    };
+
+    return sendPycmd("image:search:" + encodeURIComponent(JSON.stringify(payload)));
+  }
+
+  function loadNextImagePage(panel, query) {
+    const normalized = normalizeImageQuery(query);
+    if (!normalized) {
+      return;
+    }
+
+    if (!panel || panel !== subPanelEl || subPanelType !== "images") {
+      return;
+    }
+
+    if (panel.getAttribute("data-image-loading") === "1") {
+      return;
+    }
+
+    if (panel.getAttribute("data-image-has-more") === "0") {
+      return;
+    }
+
+    const page = Math.max(1, Number(panel.getAttribute("data-image-next-page") || "1"));
+    const requestSeq = ++imagePanelRequestSeq;
+    panel.setAttribute("data-image-request-seq", String(requestSeq));
+    panel.setAttribute("data-image-loading", "1");
+    setImageStatus(panel, "", false);
+
+    const includeWikimedia = page === 1;
+    const sent = requestImageSearchViaPython(normalized, page, includeWikimedia, requestSeq);
+    if (!sent) {
+      panel.setAttribute("data-image-loading", "0");
+      pushDebug("image.search send failed");
+    }
+  }
+
+  function requestAndRenderImageOptions(panel, query, forceRefresh) {
+    const normalized = normalizeImageQuery(query);
+    if (!normalized) {
+      resetImagePanelState(panel, "");
+      return;
+    }
+
+    if (forceRefresh) {
+      imageSearchCache.delete(normalized);
+    }
+
+    resetImagePanelState(panel, normalized);
+
+    if (!forceRefresh) {
+      const cached = getCachedImageRecord(normalized);
+      if (cached && Array.isArray(cached.options) && cached.options.length > 0) {
+        appendImageCards(panel, normalized, cached.options, true);
+        panel.setAttribute("data-image-next-page", cached.nextPage ? String(cached.nextPage) : "1");
+        panel.setAttribute("data-image-has-more", cached.nextPage ? "1" : "0");
+        panel.setAttribute("data-image-loading", "0");
+        return;
+      }
+    }
+
+    loadNextImagePage(panel, normalized);
+  }
+
+  function handleImageSearchResult(data) {
+    const query = normalizeImageQuery(data && data.query ? data.query : "");
+    const requestSeq = String(Math.max(0, Number(data && data.request_seq ? data.request_seq : 0)));
+    const panel = subPanelEl;
+
+    if (!panel || subPanelType !== "images") {
+      return;
+    }
+
+    if (!query || panel.getAttribute("data-image-query") !== query) {
+      return;
+    }
+
+    if (panel.getAttribute("data-image-request-seq") !== requestSeq) {
+      return;
+    }
+
+    const options = Array.isArray(data && data.options ? data.options : [])
+      ? data.options
+      : [];
+    const countBefore = Array.isArray(panel.__aplImageItems) ? panel.__aplImageItems.length : 0;
+    const added = appendImageCards(panel, query, options, false);
+
+    const nextPage = Math.max(0, Number(data && data.next_page ? data.next_page : 0));
+    const hasMore = Boolean(data && data.has_more) && nextPage > 0;
+
+    panel.setAttribute("data-image-loading", "0");
+    panel.setAttribute("data-image-next-page", nextPage > 0 ? String(nextPage) : panel.getAttribute("data-image-next-page") || "1");
+    panel.setAttribute("data-image-has-more", hasMore ? "1" : "0");
+    setImageStatus(panel, "", false);
+
+    if (added === 0 && countBefore > 0 && !hasMore) {
+      panel.setAttribute("data-image-has-more", "0");
+    }
+
+    const backendError = String(data && data.error ? data.error : "").trim();
+    if (backendError) {
+      pushDebug("image.search backend: " + backendError);
+    }
+
+    setCachedImageRecord(
+      query,
+      Array.isArray(panel.__aplImageItems) ? panel.__aplImageItems : [],
+      hasMore ? nextPage : null
+    );
+  }
+
+  function openImageSubPanel(container, query, forceRefresh) {
+    const normalized = normalizeImageQuery(query);
+    if (!normalized) {
+      return;
+    }
+
+    closeSubPanel();
+
+    const panel = document.createElement("div");
+    panel.className = "apl-subpanel apl-subpanel--images";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "false");
+    panel.setAttribute("data-panel-type", "images");
+    panel.setAttribute("data-image-query", normalized);
+    panel.innerHTML =
+      '<div class="apl-subpanel-body apl-image-subpanel-body">' +
+      '<div class="apl-image-results">' +
+      '<div class="apl-image-grid"></div>' +
+      '<div class="apl-image-status" hidden></div>' +
+      "</div>" +
+      "</div>";
+
+    document.body.appendChild(panel);
+    subPanelEl = panel;
+    subPanelType = "images";
+    placeImageSubPanel(panel);
+    syncDetailsToggleState(false);
+    syncImageToggleState(true);
+
+    const resultNode = panel.querySelector(".apl-image-results");
+    if (resultNode) {
+      resultNode.addEventListener("scroll", function () {
+        if (!subPanelEl || subPanelEl !== panel || subPanelType !== "images") {
+          return;
+        }
+        if (resultNode.scrollTop + resultNode.clientHeight + IMAGE_SCROLL_THRESHOLD_PX < resultNode.scrollHeight) {
+          return;
+        }
+        loadNextImagePage(panel, normalized);
+      });
+    }
+
+    requestAndRenderImageOptions(panel, normalized, Boolean(forceRefresh));
+  }
+
+  function autoOpenImagePanel(container, data) {
+    const query = resolveImageQuery(data);
+    if (!query) {
+      return;
+    }
+
+    const alreadyOpen =
+      Boolean(subPanelEl) &&
+      subPanelType === "images" &&
+      subPanelEl.getAttribute("data-image-query") === query;
+
+    if (alreadyOpen) {
+      syncImageToggleState(true);
+      return;
+    }
+
+    openImageSubPanel(container, query, false);
   }
 
 
@@ -775,6 +1375,29 @@
           return;
         }
         openSubPanel(container);
+      });
+    }
+
+    const imageToggle = container.querySelector(".apl-image-toggle");
+    if (imageToggle) {
+      imageToggle.addEventListener("click", function (event) {
+        event.preventDefault();
+        const query = normalizeImageQuery(imageToggle.getAttribute("data-query") || "");
+        if (!query) {
+          return;
+        }
+
+        const isOpen =
+          Boolean(subPanelEl) &&
+          subPanelType === "images" &&
+          subPanelEl.getAttribute("data-image-query") === query;
+
+        if (isOpen) {
+          closeSubPanel();
+          return;
+        }
+
+        openImageSubPanel(container, query, false);
       });
     }
   }
@@ -987,6 +1610,7 @@
       const translated = escapeHtml(data.translated || "");
       const audio = escapeHtml(data.audio_url || "");
       const audioLang = escapeHtml(data.audio_lang || settingsState.languages.source_language || "");
+      const imageQuery = escapeHtml(resolveImageQuery(data));
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
       return (
         '<div class="apl-body apl-translate-compact">' +
@@ -994,6 +1618,7 @@
         '<div class="apl-translate-en">' +
         original +
         "</div>" +
+        '<div class="apl-inline-actions">' +
         '<button class="apl-button apl-audio" type="button" aria-label="Play audio" data-word="' +
         original +
         '" data-audio="' +
@@ -1005,6 +1630,12 @@
         ">" +
         AUDIO_ICON_SVG +
         "</button>" +
+        '<button class="apl-button apl-image-toggle" type="button" aria-label="Open image panel" aria-pressed="false" data-query="' +
+        imageQuery +
+        '">' +
+        IMAGE_ICON_SVG +
+        "</button>" +
+        "</div>" +
         "</div>" +
         '<div class="apl-translate-vi">' +
         translated +
@@ -1022,6 +1653,7 @@
       const translated = escapeHtml(data.translated || "");
       const englishDefinition = firstDefinitionText(meanings);
       const pos = firstPartOfSpeech(meanings);
+      const imageQuery = escapeHtml(resolveImageQuery(data));
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
       lastLookupDetails = renderMeanings(meanings);
 
@@ -1038,6 +1670,7 @@
         '<span class="apl-pos-inline">' +
         pos +
         "</span>" +
+        '<div class="apl-inline-actions">' +
         '<button class="apl-button apl-audio apl-audio-mini" type="button" data-word="' +
         word +
         '" data-audio="' +
@@ -1049,6 +1682,12 @@
         ' aria-label="Play audio">' +
         AUDIO_ICON_SVG +
         "</button>" +
+        '<button class="apl-button apl-image-toggle apl-audio-mini" type="button" aria-label="Open image panel" aria-pressed="false" data-query="' +
+        imageQuery +
+        '">' +
+        IMAGE_ICON_SVG +
+        "</button>" +
+        "</div>" +
         "</div>" +
         "</div>" +
         '<div class="apl-lookup-vi">' +
@@ -1160,6 +1799,11 @@
       return;
     }
 
+    if (data.type === "image_search_result") {
+      handleImageSearchResult(data);
+      return;
+    }
+
     if (
       data.type === "error" &&
       activeCommandMeta &&
@@ -1184,6 +1828,7 @@
 
     if (!popoverEl) {
       showPopover(lastAnchor.x, lastAnchor.y, data);
+      autoOpenImagePanel(popoverEl, data);
       maybeAutoPlayAudio(data);
       return;
     }
@@ -1192,6 +1837,7 @@
     popoverEl.innerHTML = renderState(data);
     bindPopoverActions(popoverEl);
     placePopover(popoverEl, lastAnchor.x, lastAnchor.y);
+    autoOpenImagePanel(popoverEl, data);
     maybeAutoPlayAudio(data);
   }
 
@@ -1201,8 +1847,20 @@
     }
     placePopover(popoverEl, lastAnchor.x, lastAnchor.y);
     if (subPanelEl) {
-      placeSubPanel(subPanelEl);
+      if (subPanelType === "images") {
+        placeImageSubPanel(subPanelEl);
+      } else {
+        placeSubPanel(subPanelEl);
+      }
     }
+  }
+
+  function handleGlobalScrollForPopover(event) {
+    if (subPanelType === "images") {
+      return;
+    }
+
+    refreshPopoverPosition();
   }
 
   function updateSettingsState(data) {
@@ -2241,7 +2899,7 @@
   });
 
   window.addEventListener("resize", refreshPopoverPosition);
-  window.addEventListener("scroll", refreshPopoverPosition, true);
+  window.addEventListener("scroll", handleGlobalScrollForPopover, true);
 
   ensureSettingsTrigger();
   window.setTimeout(function () {

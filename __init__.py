@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import importlib
+import re
 import sys
 import hashlib
 import threading
@@ -9,7 +10,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 from urllib.request import Request, urlopen
 
 from aqt import gui_hooks, mw
@@ -19,7 +20,7 @@ ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
 ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
 ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
-ASSET_VERSION = "20260325h"
+ASSET_VERSION = "20260328g"
 ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
 
@@ -46,6 +47,10 @@ INSTALL_PING_MARKER = ADDON_DIR / ".install_ping_v1.json"
 INSTALL_PING_STATE_KEY = "_install_ping"
 
 _MESSAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="apl-worker")
+IMAGE_SEARCH_PAGE_SIZE_DEFAULT = 24
+IMAGE_SEARCH_PAGE_SIZE_MAX = 40
+IMAGE_SEARCH_TIMEOUT_SECONDS = 12
+_DDG_VQD_CACHE: dict[str, str] = {}
 
 
 def _write_install_ping_marker(payload: dict[str, object]) -> None:
@@ -562,6 +567,613 @@ def _run_translate_message(phrase: str, context: object) -> None:
     _send_to_webview(context, result)
 
 
+def _normalize_image_query(value: object) -> str:
+    compact = " ".join(str(value or "").split()).strip()
+    if not compact:
+        return ""
+    words = compact.split(" ")[:8]
+    return " ".join(words)[:80].strip()
+
+
+def _coerce_int(value: object, default: int) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except Exception:
+        return int(default)
+
+
+def _load_json_from_url(url: str, timeout_seconds: float = IMAGE_SEARCH_TIMEOUT_SECONDS) -> dict[str, object]:
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "anki-popup-lookup/1.0",
+            "Accept": "application/json",
+        },
+    )
+
+    with urlopen(request, timeout=timeout_seconds) as response:
+        raw = response.read()
+        encoding = "utf-8"
+        content_type = str(response.headers.get("Content-Type", ""))
+        if "charset=" in content_type:
+            encoding = content_type.split("charset=", 1)[-1].split(";", 1)[0].strip() or "utf-8"
+        payload = json.loads(raw.decode(encoding, errors="replace"))
+
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def _load_google_cse_credentials() -> tuple[str, str]:
+    raw = _load_raw_config_file()
+    if not isinstance(raw, dict):
+        return ("", "")
+
+    api_key = str(raw.get("google_cse_api_key", "")).strip()
+    cx = str(raw.get("google_cse_cx", "")).strip()
+    return (api_key, cx)
+
+
+def _duckduckgo_get_vqd(query: str) -> tuple[str, str]:
+    safe_query = _normalize_image_query(query)
+    if not safe_query:
+        return ("", "")
+
+    cached = _DDG_VQD_CACHE.get(safe_query)
+    if cached:
+        return (cached, "")
+
+    url = "https://duckduckgo.com/?q=" + quote(safe_query) + "&iax=images&ia=images"
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=IMAGE_SEARCH_TIMEOUT_SECONDS) as response:
+            html = response.read().decode("utf-8", errors="replace")
+    except Exception as error:
+        return ("", f"ddg_token_fetch_failed: {error}")
+
+    match = re.search(r'vqd="([^"]+)"', html)
+    if not match:
+        return ("", "ddg_token_not_found")
+
+    vqd = str(match.group(1) or "").strip()
+    if not vqd:
+        return ("", "ddg_token_empty")
+
+    _DDG_VQD_CACHE[safe_query] = vqd
+    return (vqd, "")
+
+
+def _duckduckgo_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
+    safe_query = _normalize_image_query(query)
+    if not safe_query:
+        return ([], None, "")
+
+    safe_page = max(1, _coerce_int(page, 1))
+    safe_page_size = max(6, min(IMAGE_SEARCH_PAGE_SIZE_MAX, _coerce_int(page_size, IMAGE_SEARCH_PAGE_SIZE_DEFAULT)))
+    offset = (safe_page - 1) * safe_page_size
+
+    vqd, token_error = _duckduckgo_get_vqd(safe_query)
+    if token_error:
+        return ([], None, token_error)
+
+    url = (
+        "https://duckduckgo.com/i.js?l=us-en&o=json"
+        + "&q="
+        + quote(safe_query)
+        + "&vqd="
+        + quote(vqd)
+        + "&f=,,,&p=1"
+        + "&s="
+        + str(offset)
+    )
+
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://duckduckgo.com/",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=IMAGE_SEARCH_TIMEOUT_SECONDS) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            payload = json.loads(raw)
+    except Exception as error:
+        return ([], None, f"ddg_fetch_failed: {error}")
+
+    if not isinstance(payload, dict):
+        return ([], None, "ddg_invalid_payload")
+
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return ([], None, "")
+
+    options: list[dict[str, str]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        src = str(item.get("image", "")).strip()
+        if not src:
+            continue
+        page_url = str(item.get("url", "")).strip() or src
+        title = str(item.get("title", "")).strip() or str(item.get("source", "")).strip() or "Image"
+        options.append(
+            {
+                "src": src,
+                "source": "DuckDuckGo",
+                "title": title,
+                "pageUrl": page_url,
+            }
+        )
+
+    has_next = bool(str(payload.get("next", "")).strip())
+    next_page = safe_page + 1 if has_next and options else None
+    return (options, next_page, "")
+
+
+def _google_cse_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
+    safe_query = _normalize_image_query(query)
+    if not safe_query:
+        return ([], None, "")
+
+    api_key, cx = _load_google_cse_credentials()
+    if not api_key or not cx:
+        return ([], None, "google_cse_not_configured")
+
+    safe_page = max(1, _coerce_int(page, 1))
+    safe_page_size = max(1, min(10, _coerce_int(page_size, 10)))
+    start_index = (safe_page - 1) * safe_page_size + 1
+
+    if start_index > 91:
+        return ([], None, "")
+
+    url = (
+        "https://www.googleapis.com/customsearch/v1?searchType=image"
+        + "&key="
+        + quote(api_key)
+        + "&cx="
+        + quote(cx)
+        + "&q="
+        + quote(safe_query)
+        + "&safe=active"
+        + "&hl=en"
+        + "&num="
+        + str(safe_page_size)
+        + "&start="
+        + str(start_index)
+    )
+
+    try:
+        payload = _load_json_from_url(url)
+    except Exception as error:
+        return ([], None, f"google_cse_fetch_failed: {error}")
+
+    if "error" in payload:
+        err_payload = payload.get("error")
+        if isinstance(err_payload, dict):
+            message = str(err_payload.get("message", "")).strip()
+            return ([], None, f"google_cse_error: {message}" if message else "google_cse_error")
+        return ([], None, "google_cse_error")
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return ([], None, "")
+
+    options: list[dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        src = str(item.get("link", "")).strip()
+        if not src:
+            continue
+        image_payload = item.get("image")
+        if isinstance(image_payload, dict):
+            context_link = str(image_payload.get("contextLink", "")).strip()
+        else:
+            context_link = ""
+
+        options.append(
+            {
+                "src": src,
+                "source": "Google",
+                "title": str(item.get("title", "")).strip() or "Image",
+                "pageUrl": context_link or src,
+            }
+        )
+
+    next_page = None
+    queries_payload = payload.get("queries")
+    if isinstance(queries_payload, dict):
+        next_pages = queries_payload.get("nextPage")
+        if isinstance(next_pages, list) and next_pages:
+            next_page = safe_page + 1
+
+    return (options, next_page, "")
+
+
+def _openverse_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
+    safe_query = _normalize_image_query(query)
+    if not safe_query:
+        return ([], None, "")
+
+    safe_page = max(1, _coerce_int(page, 1))
+    safe_page_size = max(6, min(IMAGE_SEARCH_PAGE_SIZE_MAX, _coerce_int(page_size, IMAGE_SEARCH_PAGE_SIZE_DEFAULT)))
+
+    url = (
+        "https://api.openverse.org/v1/images/?q="
+        + quote(safe_query)
+        + "&page_size="
+        + str(safe_page_size)
+        + "&page="
+        + str(safe_page)
+    )
+
+    try:
+        payload = _load_json_from_url(url)
+    except Exception as error:
+        return ([], None, f"openverse_fetch_failed: {error}")
+
+    results = payload.get("results")
+    if not isinstance(results, list):
+        detail = str(payload.get("detail", "")).strip()
+        if detail:
+            return ([], None, f"openverse_invalid: {detail}")
+        return ([], None, "")
+
+    options: list[dict[str, str]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        src = str(item.get("url", "")).strip()
+        if not src:
+            continue
+        options.append(
+            {
+                "src": src,
+                "source": "Openverse",
+                "title": str(item.get("title", "")).strip() or "Image",
+                "pageUrl": str(item.get("foreign_landing_url", "")).strip() or src,
+            }
+        )
+
+    current_page = max(1, _coerce_int(payload.get("page", safe_page), safe_page))
+    page_count = max(current_page, _coerce_int(payload.get("page_count", current_page), current_page))
+    next_page = current_page + 1 if current_page < page_count else None
+
+    return (options, next_page, "")
+
+
+def _wikimedia_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
+    safe_query = _normalize_image_query(query)
+    if not safe_query:
+        return ([], None, "")
+
+    safe_page = max(1, _coerce_int(page, 1))
+    safe_page_size = max(6, min(IMAGE_SEARCH_PAGE_SIZE_MAX, _coerce_int(page_size, IMAGE_SEARCH_PAGE_SIZE_DEFAULT)))
+    offset = (safe_page - 1) * safe_page_size
+
+    search_text = quote(safe_query)
+    url = (
+        "https://commons.wikimedia.org/w/api.php?origin=*&action=query&format=json&generator=search"
+        + "&gsrnamespace=6&gsrlimit="
+        + str(safe_page_size)
+        + "&gsroffset="
+        + str(offset)
+        + "&gsrsearch="
+        + search_text
+        + "&prop=imageinfo|info&iiprop=url&iiurlwidth=960&iiurlheight=720&inprop=url"
+    )
+
+    try:
+        payload = _load_json_from_url(url)
+    except Exception as error:
+        return ([], None, f"wikimedia_fetch_failed: {error}")
+
+    query_payload = payload.get("query")
+    if not isinstance(query_payload, dict):
+        detail = str(payload.get("error", "")).strip()
+        return ([], None, detail)
+
+    pages = query_payload.get("pages")
+    if not isinstance(pages, dict):
+        pages = {}
+
+    options: list[dict[str, str]] = []
+    for page_data in pages.values():
+        if not isinstance(page_data, dict):
+            continue
+        image_info = page_data.get("imageinfo")
+        if not isinstance(image_info, list) or not image_info:
+            continue
+        first_info = image_info[0]
+        if not isinstance(first_info, dict):
+            continue
+        src = str(first_info.get("thumburl") or first_info.get("url") or "").strip()
+        if not src:
+            continue
+        raw_title = str(page_data.get("title", "")).replace("File:", "").replace("_", " ").strip()
+        page_url = str(first_info.get("descriptionurl") or page_data.get("fullurl") or src).strip()
+        options.append(
+            {
+                "src": src,
+                "source": "Wikimedia",
+                "title": raw_title or "Image",
+                "pageUrl": page_url,
+            }
+        )
+
+    next_page = None
+    continuation = payload.get("continue")
+    if isinstance(continuation, dict) and continuation.get("gsroffset") is not None:
+        next_page = safe_page + 1
+
+    return (options, next_page, "")
+
+
+def _wikipedia_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
+    safe_query = _normalize_image_query(query)
+    if not safe_query:
+        return ([], None, "")
+
+    safe_page = max(1, _coerce_int(page, 1))
+    safe_page_size = max(6, min(IMAGE_SEARCH_PAGE_SIZE_MAX, _coerce_int(page_size, IMAGE_SEARCH_PAGE_SIZE_DEFAULT)))
+    offset = (safe_page - 1) * safe_page_size
+
+    url = (
+        "https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search"
+        + "&gsrlimit="
+        + str(safe_page_size)
+        + "&gsroffset="
+        + str(offset)
+        + "&gsrsearch="
+        + quote(safe_query)
+        + "&prop=pageimages|info&piprop=thumbnail&pithumbsize=960&inprop=url"
+    )
+
+    try:
+        payload = _load_json_from_url(url)
+    except Exception as error:
+        return ([], None, f"wikipedia_fetch_failed: {error}")
+
+    query_payload = payload.get("query")
+    if not isinstance(query_payload, dict):
+        return ([], None, "")
+
+    pages = query_payload.get("pages")
+    if not isinstance(pages, dict):
+        pages = {}
+
+    options: list[dict[str, str]] = []
+    for page_data in pages.values():
+        if not isinstance(page_data, dict):
+            continue
+        thumb = page_data.get("thumbnail")
+        if not isinstance(thumb, dict):
+            continue
+        src = str(thumb.get("source", "")).strip()
+        if not src:
+            continue
+        title = str(page_data.get("title", "")).replace("_", " ").strip()
+        page_url = str(page_data.get("fullurl", "")).strip() or src
+        options.append(
+            {
+                "src": src,
+                "source": "Wikipedia",
+                "title": title or "Image",
+                "pageUrl": page_url,
+            }
+        )
+
+    next_page = None
+    continuation = payload.get("continue")
+    if isinstance(continuation, dict) and continuation.get("gsroffset") is not None:
+        next_page = safe_page + 1
+
+    return (options, next_page, "")
+
+
+def _wikipedia_exact_title_images(query: str) -> tuple[list[dict[str, str]], str]:
+    safe_query = _normalize_image_query(query)
+    if not safe_query:
+        return ([], "")
+
+    url = (
+        "https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json"
+        + "&titles="
+        + quote(safe_query)
+        + "&prop=pageimages|info&piprop=thumbnail&pithumbsize=960&inprop=url"
+    )
+
+    try:
+        payload = _load_json_from_url(url)
+    except Exception as error:
+        return ([], f"wikipedia_exact_failed: {error}")
+
+    query_payload = payload.get("query")
+    if not isinstance(query_payload, dict):
+        return ([], "")
+
+    pages = query_payload.get("pages")
+    if not isinstance(pages, dict):
+        return ([], "")
+
+    options: list[dict[str, str]] = []
+    for page_data in pages.values():
+        if not isinstance(page_data, dict):
+            continue
+        thumb = page_data.get("thumbnail")
+        if not isinstance(thumb, dict):
+            continue
+        src = str(thumb.get("source", "")).strip()
+        if not src:
+            continue
+        title = str(page_data.get("title", "")).replace("_", " ").strip()
+        page_url = str(page_data.get("fullurl", "")).strip() or src
+        options.append(
+            {
+                "src": src,
+                "source": "Wikipedia",
+                "title": title or "Image",
+                "pageUrl": page_url,
+            }
+        )
+
+    return (options, "")
+
+
+def _normalize_for_match(value: object) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    return " ".join(text.split())
+
+
+def _image_relevance_score(query: str, item: dict[str, str]) -> int:
+    normalized_query = _normalize_for_match(query)
+    normalized_title = _normalize_for_match(item.get("title", ""))
+    source = str(item.get("source", "")).strip().lower()
+
+    if not normalized_query:
+        return 0
+
+    score = 0
+    if normalized_title == normalized_query:
+        score += 1000
+    if normalized_title.startswith(normalized_query):
+        score += 260
+    if normalized_query in normalized_title:
+        score += 180
+
+    query_tokens = [token for token in normalized_query.split(" ") if token]
+    title_tokens = set(token for token in normalized_title.split(" ") if token)
+    overlap = sum(1 for token in query_tokens if token in title_tokens)
+    score += overlap * 45
+
+    if source == "wikipedia":
+        score += 35
+    elif source == "wikimedia":
+        score += 10
+
+    return score
+
+
+def _rank_image_options(query: str, options: list[dict[str, str]]) -> list[dict[str, str]]:
+    scored: list[tuple[int, int, dict[str, str]]] = []
+    for index, item in enumerate(options):
+        score = _image_relevance_score(query, item)
+        scored.append((score, -index, item))
+
+    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    return [row[2] for row in scored]
+
+
+def _merge_image_options(primary: list[dict[str, str]], fallback: list[dict[str, str]]) -> list[dict[str, str]]:
+    output: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def _append(items: list[dict[str, str]]) -> None:
+        for item in items:
+            src = str(item.get("src", "")).strip()
+            if not src or src in seen:
+                continue
+            seen.add(src)
+            output.append(
+                {
+                    "src": src,
+                    "source": str(item.get("source", "Web") or "Web"),
+                    "title": str(item.get("title", "Image") or "Image"),
+                    "pageUrl": str(item.get("pageUrl", src) or src),
+                }
+            )
+
+    _append(primary)
+    _append(fallback)
+    return output
+
+
+def _run_image_search_message(payload_raw: str, context: object) -> None:
+    try:
+        payload = json.loads(payload_raw) if payload_raw else {}
+    except Exception:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    query = _normalize_image_query(payload.get("query", ""))
+    page = max(1, _coerce_int(payload.get("page", 1), 1))
+    page_size = max(
+        6,
+        min(IMAGE_SEARCH_PAGE_SIZE_MAX, _coerce_int(payload.get("page_size", IMAGE_SEARCH_PAGE_SIZE_DEFAULT), IMAGE_SEARCH_PAGE_SIZE_DEFAULT)),
+    )
+    request_seq = max(0, _coerce_int(payload.get("request_seq", 0), 0))
+
+    options: list[dict[str, str]] = []
+    next_page: int | None = None
+    errors: list[str] = []
+
+    if query:
+        ddg_options, ddg_next_page, ddg_error = _duckduckgo_search_images(query, page, page_size)
+        if ddg_error:
+            errors.append(ddg_error)
+
+        options = ddg_options
+        next_page = ddg_next_page
+
+        if not options:
+            google_options, google_next_page, google_error = _google_cse_search_images(
+                query,
+                page,
+                min(10, page_size),
+            )
+
+            if google_error and google_error != "google_cse_not_configured":
+                errors.append(google_error)
+
+            if google_options:
+                options = google_options
+                next_page = google_next_page
+
+        if not options:
+            wikipedia_options, wikipedia_next_page, wikipedia_error = _wikipedia_search_images(query, page, page_size)
+            options = wikipedia_options
+            next_page = wikipedia_next_page
+            if wikipedia_error:
+                errors.append(wikipedia_error)
+
+            if page == 1 and len(options) < 8:
+                exact_options, exact_error = _wikipedia_exact_title_images(query)
+                options = _merge_image_options(exact_options, options)
+                if exact_error:
+                    errors.append(exact_error)
+
+        options = _rank_image_options(query, options)
+
+    _send_to_webview(
+        context,
+        {
+            "type": "image_search_result",
+            "query": query,
+            "page": page,
+            "next_page": int(next_page or 0),
+            "has_more": bool(next_page),
+            "request_seq": request_seq,
+            "options": options,
+            "error": "; ".join([item for item in errors if item]),
+        },
+    )
+
+
 def _run_audio_message(audio_url: str, context: object) -> None:
     ok, message = _play_audio_url_native(audio_url)
     _send_to_webview(
@@ -837,6 +1449,11 @@ def on_js_message(handled, message: str, context):
     if message.startswith("translate:"):
         phrase = unquote(message[10:]).strip()
         _MESSAGE_EXECUTOR.submit(_run_translate_message, phrase, context)
+        return (True, None)
+
+    if message.startswith("image:search:"):
+        payload_raw = unquote(message[len("image:search:") :]).strip()
+        _MESSAGE_EXECUTOR.submit(_run_image_search_message, payload_raw, context)
         return (True, None)
 
     if message.startswith("audio:play:"):

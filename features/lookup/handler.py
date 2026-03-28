@@ -29,10 +29,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_definitions": 3,
     "source_language": "en",
     "target_language": "vi",
+    "popover_definition_language_mode": "output",
 }
 
 SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh-CN", "ja", "ko", "ru", "fi", "de", "fr", "vi"}
 SUPPORTED_TARGET_LANGUAGES = {"en", "zh-CN", "ja", "ko", "ru", "fi", "de", "fr", "vi"}
+SUPPORTED_DEFINITION_LANGUAGE_MODES = {"output", "input", "english"}
+DEFINITION_TRANSLATION_CACHE_MAX = 512
+_definition_translation_cache: dict[tuple[str, str, str], str] = {}
 
 
 def _normalize_source_language(value: object) -> str:
@@ -54,6 +58,13 @@ def _normalize_detected_language(value: str) -> str:
     return "en"
 
 
+def _normalize_definition_language_mode(value: object) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in SUPPORTED_DEFINITION_LANGUAGE_MODES:
+        return mode
+    return "output"
+
+
 def _load_config() -> dict[str, Any]:
     config_path = Path(__file__).resolve().parents[2] / "config.json"
     if not config_path.exists():
@@ -70,6 +81,47 @@ def _load_config() -> dict[str, Any]:
     return DEFAULT_CONFIG.copy()
 
 
+def _first_definition_text(meanings: object) -> str:
+    if not isinstance(meanings, list) or not meanings:
+        return ""
+
+    first_meaning = meanings[0] if isinstance(meanings[0], dict) else {}
+    definitions = first_meaning.get("definitions", []) if isinstance(first_meaning, dict) else []
+    if not isinstance(definitions, list) or not definitions:
+        return ""
+
+    first_definition = definitions[0] if isinstance(definitions[0], dict) else {}
+    return str(first_definition.get("definition") or "").strip()
+
+
+def _translate_definition_cached(text: str, source_language: str, target_language: str) -> str:
+    normalized_text = str(text or "").strip()
+    if not normalized_text:
+        return ""
+
+    if source_language == target_language:
+        return normalized_text
+
+    cache_key = (source_language, target_language, normalized_text)
+    cached = _definition_translation_cache.get(cache_key)
+    if cached:
+        return cached
+
+    translated = translation_service.translate_text(
+        normalized_text,
+        source_language,
+        target_language,
+    ).strip()
+
+    if len(_definition_translation_cache) >= DEFINITION_TRANSLATION_CACHE_MAX:
+        oldest_key = next(iter(_definition_translation_cache), None)
+        if oldest_key is not None:
+            _definition_translation_cache.pop(oldest_key, None)
+
+    _definition_translation_cache[cache_key] = translated or normalized_text
+    return _definition_translation_cache[cache_key]
+
+
 def handle_lookup(word: str) -> dict[str, Any]:
     normalized = (word or "").strip()
     if not normalized:
@@ -78,6 +130,9 @@ def handle_lookup(word: str) -> dict[str, Any]:
     config = _load_config()
     source_language = _normalize_source_language(config.get("source_language"))
     target_language = _normalize_target_language(config.get("target_language"))
+    definition_language_mode = _normalize_definition_language_mode(
+        config.get("popover_definition_language_mode")
+    )
     lookup_language = source_language
 
     if source_language == "auto":
@@ -104,6 +159,24 @@ def handle_lookup(word: str) -> dict[str, Any]:
         except Exception:
             translated = "Khong the dich nghia luc nay."
 
+        first_definition = _first_definition_text(parsed.get("meanings") or [])
+        definition_target_language = target_language
+        if definition_language_mode == "input":
+            definition_target_language = lookup_language
+        elif definition_language_mode == "english":
+            definition_target_language = "en"
+
+        definition_display = first_definition
+        if first_definition and lookup_language != definition_target_language:
+            try:
+                definition_display = _translate_definition_cached(
+                    first_definition,
+                    lookup_language,
+                    definition_target_language,
+                )
+            except Exception:
+                definition_display = first_definition
+
         audio_url = str(parsed.get("audio_url") or "").strip()
         if not audio_url:
             audio_url = tts_service.build_google_tts_url(parsed.get("word") or normalized, lookup_language)
@@ -115,6 +188,7 @@ def handle_lookup(word: str) -> dict[str, Any]:
             "phonetic": parsed.get("phonetic") or "",
             "audio_url": audio_url,
             "audio_lang": lookup_language,
+            "definition_display": definition_display,
             "meanings": parsed.get("meanings") or [],
         }
     except LookupError:

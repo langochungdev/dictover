@@ -20,7 +20,7 @@ ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
 ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
 ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
-ASSET_VERSION = "20260328h"
+ASSET_VERSION = "20260328i"
 ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
 
@@ -44,6 +44,7 @@ DEFAULT_RUNTIME_SETTINGS = {
     "popover_trigger_mode": "auto",
     "popover_shortcut": "Shift",
     "popover_open_panel_mode": "none",
+    "popover_definition_language_mode": "output",
 }
 
 INSTALL_PING_URL = "https://langochung.me/api/ping/dictover"
@@ -254,6 +255,13 @@ def _normalize_panel_open_mode(value: object) -> str:
     return "none"
 
 
+def _normalize_definition_language_mode(value: object) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {"input", "english"}:
+        return mode
+    return "output"
+
+
 def _coerce_bool(value: object, default: bool) -> bool:
     if value is None:
         return bool(default)
@@ -347,6 +355,11 @@ def _runtime_settings_from_config(config: dict) -> dict[str, object]:
             if _get_value("popover_open_panel_mode") is not None
             else DEFAULT_RUNTIME_SETTINGS["popover_open_panel_mode"]
         ),
+        "popover_definition_language_mode": _normalize_definition_language_mode(
+            _get_value("popover_definition_language_mode")
+            if _get_value("popover_definition_language_mode") is not None
+            else DEFAULT_RUNTIME_SETTINGS["popover_definition_language_mode"]
+        ),
     }
 
 
@@ -372,6 +385,11 @@ def _save_runtime_settings(partial_settings: dict[str, object]) -> dict[str, obj
     if "popover_open_panel_mode" in partial_settings:
         merged["popover_open_panel_mode"] = _normalize_panel_open_mode(
             partial_settings["popover_open_panel_mode"]
+        )
+
+    if "popover_definition_language_mode" in partial_settings:
+        merged["popover_definition_language_mode"] = _normalize_definition_language_mode(
+            partial_settings["popover_definition_language_mode"]
         )
 
     return merged

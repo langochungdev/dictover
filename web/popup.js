@@ -51,6 +51,7 @@
       shortcut_combo: "Shift",
       auto_play_audio: false,
       panel_open_mode: "none",
+      definition_language_mode: "output",
     },
     resources: {
       mode: "api_only",
@@ -71,6 +72,7 @@
   const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
   const DEFAULT_SHORTCUT_COMBO = "Shift";
   const DEFAULT_PANEL_OPEN_MODE = "none";
+  const DEFAULT_DEFINITION_LANGUAGE_MODE = "output";
   const SETTINGS_PANEL_MODE_COPY = {
     en: {
       title: "Panel on popover",
@@ -78,11 +80,109 @@
       details: "show detail panel",
       images: "show image panel",
     },
+    "zh-CN": {
+      title: "Popover 显示面板",
+      none: "不显示",
+      details: "显示详情面板",
+      images: "显示图片面板",
+    },
+    ja: {
+      title: "ポップオーバー表示パネル",
+      none: "なし",
+      details: "詳細パネルを表示",
+      images: "画像パネルを表示",
+    },
+    ko: {
+      title: "팝오버 표시 패널",
+      none: "표시 안 함",
+      details: "상세 패널 표시",
+      images: "이미지 패널 표시",
+    },
+    ru: {
+      title: "Панель в поповере",
+      none: "не показывать",
+      details: "показывать панель деталей",
+      images: "показывать панель изображений",
+    },
+    fi: {
+      title: "Paneeli ponnahdusikkunassa",
+      none: "ei nayteta",
+      details: "nayta tietopaneeli",
+      images: "nayta kuvapaneeli",
+    },
+    de: {
+      title: "Panel im Popover",
+      none: "nicht anzeigen",
+      details: "Detailpanel anzeigen",
+      images: "Bildpanel anzeigen",
+    },
+    fr: {
+      title: "Panneau dans le popover",
+      none: "ne pas afficher",
+      details: "afficher le panneau detail",
+      images: "afficher le panneau image",
+    },
     vi: {
-      title: "Panel khi hien popover",
+      title: "Panel khi hiện popover",
       none: "không",
-      details: "hien panel chi tiết",
-      images: "hien panel ảnh",
+      details: "hiện panel chi tiết",
+      images: "hiện panel ảnh",
+    },
+  };
+  const SETTINGS_DEFINITION_MODE_COPY = {
+    en: {
+      title: "Definition language",
+      output: "output language",
+      input: "input language",
+      english: "English",
+    },
+    "zh-CN": {
+      title: "释义语言",
+      output: "输出语言",
+      input: "输入语言",
+      english: "英语",
+    },
+    ja: {
+      title: "定義の言語",
+      output: "出力言語",
+      input: "入力言語",
+      english: "英語",
+    },
+    ko: {
+      title: "정의 언어",
+      output: "출력 언어",
+      input: "입력 언어",
+      english: "영어",
+    },
+    ru: {
+      title: "Язык определения",
+      output: "язык вывода",
+      input: "язык ввода",
+      english: "английский",
+    },
+    fi: {
+      title: "Maaritelman kieli",
+      output: "kohdekieli",
+      input: "lahdekieli",
+      english: "englanti",
+    },
+    de: {
+      title: "Sprache der Definition",
+      output: "Ausgabesprache",
+      input: "Eingabesprache",
+      english: "Englisch",
+    },
+    fr: {
+      title: "Langue de la definition",
+      output: "langue de sortie",
+      input: "langue d'entree",
+      english: "anglais",
+    },
+    vi: {
+      title: "Ngôn ngữ định nghĩa",
+      output: "ngôn ngữ đầu ra",
+      input: "ngôn ngữ đầu vào",
+      english: "tiếng Anh",
     },
   };
   const SUPPORTED_LANGUAGES = [
@@ -231,6 +331,10 @@
     '<circle cx="7.2" cy="8" r="1.3"/>' +
     '<path d="M4.8 14l3.6-3.8 2.8 2.8 2.4-2.3 2.4 3.3"/>' +
     "</g></svg>";
+  const SETTINGS_ICON_SVG =
+    '<svg class="apl-settings-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">' +
+    '<path d="M8.2 2.6h3.6l.5 2.1a5.6 5.6 0 0 1 1.2.7l2-.8 1.8 3.1-1.5 1.5c.1.4.1.8.1 1.2s0 .8-.1 1.2l1.5 1.5-1.8 3.1-2-.8a5.6 5.6 0 0 1-1.2.7l-.5 2.1H8.2l-.5-2.1a5.6 5.6 0 0 1-1.2-.7l-2 .8-1.8-3.1L4.2 12a6 6 0 0 1-.1-1.2c0-.4 0-.8.1-1.2L2.7 8.1l1.8-3.1 2 .8a5.6 5.6 0 0 1 1.2-.7zm1.8 5a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>' +
+    "</svg>";
   const DEBUG_PANEL_ALWAYS_VISIBLE =
     window.__aplDebugPanelAlwaysVisible === true ||
     String(window.__aplDebugPanelAlwaysVisible || "").toLowerCase() === "true";
@@ -1697,6 +1801,14 @@
         openImageSubPanel(container, query, false);
       });
     }
+
+    const quickSettingsButtons = container.querySelectorAll(".apl-open-settings");
+    quickSettingsButtons.forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        openSettingsModal();
+      });
+    });
   }
 
   function playAudio(audioUrl, word, lang) {
@@ -1932,6 +2044,9 @@
         '">' +
         IMAGE_ICON_SVG +
         "</button>" +
+        '<button class="apl-button apl-popover-settings apl-open-settings" type="button" aria-label="Open settings">' +
+        SETTINGS_ICON_SVG +
+        "</button>" +
         "</div>" +
         "</div>" +
         '<div class="apl-translate-vi">' +
@@ -1949,6 +2064,11 @@
       const meanings = data.meanings || [];
       const translated = escapeHtml(data.translated || "");
       const englishDefinition = firstDefinitionText(meanings);
+      const displayDefinition = data.definition_display
+        ? escapeHtml(data.definition_display)
+        : data.definition_translated
+          ? escapeHtml(data.definition_translated)
+        : englishDefinition;
       const pos = firstPartOfSpeech(meanings);
       const imageQuery = escapeHtml(resolveImageQuery(data));
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
@@ -1984,6 +2104,9 @@
         '">' +
         IMAGE_ICON_SVG +
         "</button>" +
+        '<button class="apl-button apl-popover-settings apl-audio-mini apl-open-settings" type="button" aria-label="Open settings">' +
+        SETTINGS_ICON_SVG +
+        "</button>" +
         "</div>" +
         "</div>" +
         "</div>" +
@@ -1995,7 +2118,7 @@
         detailsToggleLabels.closed +
         "</span>" +
         '<span class="apl-lookup-definition">' +
-        englishDefinition +
+        displayDefinition +
         "</span>" +
         "</button>" +
         '<div class="apl-details-source" hidden>' +
@@ -2180,6 +2303,7 @@
       shortcut_combo: normalizeShortcutCombo(incomingSettings.popover_shortcut || DEFAULT_SHORTCUT_COMBO),
       auto_play_audio: Boolean(incomingSettings.auto_play_audio),
       panel_open_mode: normalizePanelOpenMode(incomingSettings.popover_open_panel_mode),
+      definition_language_mode: normalizeDefinitionLanguageMode(incomingSettings.popover_definition_language_mode),
     };
     pushDebug(
       "settings_state recv src=" +
@@ -2193,7 +2317,9 @@
         " autoPlay=" +
         String(incomingState.auto_play_audio) +
         " panelMode=" +
-        incomingState.panel_open_mode
+        incomingState.panel_open_mode +
+        " definitionMode=" +
+        incomingState.definition_language_mode
     );
 
     if (settingsSaveGuardSnapshot && nowTs <= settingsSaveGuardUntil) {
@@ -2203,7 +2329,8 @@
         incomingState.trigger_mode !== settingsSaveGuardSnapshot.trigger_mode ||
         incomingState.shortcut_combo !== settingsSaveGuardSnapshot.shortcut_combo ||
         incomingState.auto_play_audio !== settingsSaveGuardSnapshot.auto_play_audio ||
-        incomingState.panel_open_mode !== settingsSaveGuardSnapshot.panel_open_mode;
+        incomingState.panel_open_mode !== settingsSaveGuardSnapshot.panel_open_mode ||
+        incomingState.definition_language_mode !== settingsSaveGuardSnapshot.definition_language_mode;
 
       if (mismatch) {
         pushDebug("Bo qua settings_state cu vi khong khop state vua luu.");
@@ -2225,6 +2352,7 @@
       shortcut_combo: incomingState.shortcut_combo,
       auto_play_audio: incomingState.auto_play_audio,
       panel_open_mode: incomingState.panel_open_mode,
+      definition_language_mode: incomingState.definition_language_mode,
     };
 
     if (settingsState.popover.trigger_mode === "auto") {
@@ -2282,7 +2410,9 @@
         " autoPlay=" +
         String(Boolean(settingsState.popover.auto_play_audio)) +
         " panelMode=" +
-        settingsState.popover.panel_open_mode
+        settingsState.popover.panel_open_mode +
+        " definitionMode=" +
+        settingsState.popover.definition_language_mode
     );
     const payload = encodeURIComponent(
       JSON.stringify({
@@ -2293,6 +2423,7 @@
         popover_trigger_mode: settingsState.popover.trigger_mode,
         popover_shortcut: settingsState.popover.shortcut_combo,
         popover_open_panel_mode: settingsState.popover.panel_open_mode,
+        popover_definition_language_mode: settingsState.popover.definition_language_mode,
         languages: {
           source_language: settingsState.languages.source_language,
           target_language: settingsState.languages.target_language,
@@ -2598,6 +2729,18 @@
     return normalizePanelOpenMode(settingsState.popover.panel_open_mode) === mode ? " checked" : "";
   }
 
+  function normalizeDefinitionLanguageMode(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "input" || normalized === "english") {
+      return normalized;
+    }
+    return DEFAULT_DEFINITION_LANGUAGE_MODE;
+  }
+
+  function definitionLanguageModeChecked(mode) {
+    return normalizeDefinitionLanguageMode(settingsState.popover.definition_language_mode) === mode ? " checked" : "";
+  }
+
   function getSettingsUiCopy() {
     const targetLanguage = String(settingsState.languages.target_language || "en");
 
@@ -2616,12 +2759,47 @@
     return SETTINGS_UI_COPY.en;
   }
 
-  function getPanelModeUiCopy() {
-    const targetLanguage = String(settingsState.languages.target_language || "en").toLowerCase();
-    if (targetLanguage.indexOf("vi") === 0) {
-      return SETTINGS_PANEL_MODE_COPY.vi;
+  function resolveCopyByTargetLanguage(copyMap) {
+    const rawLanguage = String(settingsState.languages.target_language || "en");
+    if (copyMap[rawLanguage]) {
+      return copyMap[rawLanguage];
     }
-    return SETTINGS_PANEL_MODE_COPY.en;
+
+    const normalized = rawLanguage.toLowerCase();
+    if (normalized.indexOf("zh") === 0 && copyMap["zh-CN"]) {
+      return copyMap["zh-CN"];
+    }
+    if (normalized.indexOf("vi") === 0 && copyMap.vi) {
+      return copyMap.vi;
+    }
+    if (normalized.indexOf("ja") === 0 && copyMap.ja) {
+      return copyMap.ja;
+    }
+    if (normalized.indexOf("ko") === 0 && copyMap.ko) {
+      return copyMap.ko;
+    }
+    if (normalized.indexOf("ru") === 0 && copyMap.ru) {
+      return copyMap.ru;
+    }
+    if (normalized.indexOf("fi") === 0 && copyMap.fi) {
+      return copyMap.fi;
+    }
+    if (normalized.indexOf("de") === 0 && copyMap.de) {
+      return copyMap.de;
+    }
+    if (normalized.indexOf("fr") === 0 && copyMap.fr) {
+      return copyMap.fr;
+    }
+
+    return copyMap.en;
+  }
+
+  function getPanelModeUiCopy() {
+    return resolveCopyByTargetLanguage(SETTINGS_PANEL_MODE_COPY);
+  }
+
+  function getDefinitionModeUiCopy() {
+    return resolveCopyByTargetLanguage(SETTINGS_DEFINITION_MODE_COPY);
   }
 
   function renderSettingsModal() {
@@ -2631,6 +2809,7 @@
 
     const uiCopy = getSettingsUiCopy();
     const panelCopy = getPanelModeUiCopy();
+    const definitionCopy = getDefinitionModeUiCopy();
     const avatarUrl = escapeHtml(getAddonAssetUrl("assets/avt-cat.jpg"));
 
     const errorHtml = settingsMessage
@@ -2702,24 +2881,54 @@
       "</div>" +
       "</div>" +
       '<div class="apl-settings-section">' +
+      '<div class="apl-settings-panel-definition-layout">' +
+      '<div class="apl-settings-panel-definition-column">' +
       '<div class="apl-settings-section-title">' +
       escapeHtml(panelCopy.title) +
       "</div>" +
       '<label class="apl-settings-radio"><input class="apl-settings-panel-open-mode" type="radio" name="apl-panel-open-mode" value="none"' +
       panelOpenModeChecked("none") +
-      "> " +
+      '"><span class="apl-settings-radio-label">' +
       escapeHtml(panelCopy.none) +
+      "</span>" +
       "</label>" +
       '<label class="apl-settings-radio"><input class="apl-settings-panel-open-mode" type="radio" name="apl-panel-open-mode" value="details"' +
       panelOpenModeChecked("details") +
-      "> " +
+      '"><span class="apl-settings-radio-label">' +
       escapeHtml(panelCopy.details) +
+      "</span>" +
       "</label>" +
       '<label class="apl-settings-radio"><input class="apl-settings-panel-open-mode" type="radio" name="apl-panel-open-mode" value="images"' +
       panelOpenModeChecked("images") +
-      "> " +
+      '"><span class="apl-settings-radio-label">' +
       escapeHtml(panelCopy.images) +
+      "</span>" +
       "</label>" +
+      "</div>" +
+      '<div class="apl-settings-panel-definition-column apl-settings-panel-definition-column--right">' +
+      '<div class="apl-settings-section-title">' +
+      escapeHtml(definitionCopy.title) +
+      "</div>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-definition-language-mode" type="radio" name="apl-definition-language-mode" value="output"' +
+      definitionLanguageModeChecked("output") +
+      '"><span class="apl-settings-radio-label">' +
+      escapeHtml(definitionCopy.output) +
+      "</span>" +
+      "</label>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-definition-language-mode" type="radio" name="apl-definition-language-mode" value="input"' +
+      definitionLanguageModeChecked("input") +
+      '"><span class="apl-settings-radio-label">' +
+      escapeHtml(definitionCopy.input) +
+      "</span>" +
+      "</label>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-definition-language-mode" type="radio" name="apl-definition-language-mode" value="english"' +
+      definitionLanguageModeChecked("english") +
+      '"><span class="apl-settings-radio-label">' +
+      escapeHtml(definitionCopy.english) +
+      "</span>" +
+      "</label>" +
+      "</div>" +
+      "</div>" +
       "</div>" +
       '<div class="apl-settings-section">' +
       '<label class="apl-settings-toggle"><input class="apl-settings-auto-play-audio" type="checkbox"' +
@@ -2819,6 +3028,9 @@
     const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
     const triggerModeInput = settingsModalEl.querySelector(".apl-settings-trigger-mode:checked");
     const panelModeInput = settingsModalEl.querySelector(".apl-settings-panel-open-mode:checked");
+    const definitionLanguageModeInput = settingsModalEl.querySelector(
+      ".apl-settings-definition-language-mode:checked"
+    );
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
     const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
 
@@ -2828,6 +3040,9 @@
     const panelOpenMode = panelModeInput
       ? normalizePanelOpenMode(panelModeInput.value)
       : normalizePanelOpenMode(settingsState.popover.panel_open_mode);
+    const definitionLanguageMode = definitionLanguageModeInput
+      ? normalizeDefinitionLanguageMode(definitionLanguageModeInput.value)
+      : normalizeDefinitionLanguageMode(settingsState.popover.definition_language_mode);
     const shortcutCombo = normalizeShortcutCombo(shortcutInput ? shortcutInput.value : settingsState.popover.shortcut_combo);
     const autoPlayAudio = Boolean(autoPlayInput && autoPlayInput.checked);
 
@@ -2838,6 +3053,7 @@
       shortcut_combo: shortcutCombo,
       auto_play_audio: autoPlayAudio,
       panel_open_mode: panelOpenMode,
+      definition_language_mode: definitionLanguageMode,
     };
   }
 
@@ -2848,6 +3064,9 @@
     settingsState.popover.shortcut_combo = nextValues.shortcut_combo;
     settingsState.popover.auto_play_audio = nextValues.auto_play_audio;
     settingsState.popover.panel_open_mode = normalizePanelOpenMode(nextValues.panel_open_mode);
+    settingsState.popover.definition_language_mode = normalizeDefinitionLanguageMode(
+      nextValues.definition_language_mode
+    );
   }
 
   function syncSettingsFormIfOpen() {
@@ -2860,6 +3079,9 @@
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
     const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
     const panelModeInputs = settingsModalEl.querySelectorAll(".apl-settings-panel-open-mode");
+    const definitionLanguageModeInputs = settingsModalEl.querySelectorAll(
+      ".apl-settings-definition-language-mode"
+    );
     const autoMode = settingsModalEl.querySelector(
       '.apl-settings-trigger-mode[value="auto"]'
     );
@@ -2895,6 +3117,11 @@
     panelModeInputs.forEach(function (input) {
       input.checked = normalizePanelOpenMode(input.value) === normalizePanelOpenMode(settingsState.popover.panel_open_mode);
     });
+    definitionLanguageModeInputs.forEach(function (input) {
+      input.checked =
+        normalizeDefinitionLanguageMode(input.value) ===
+        normalizeDefinitionLanguageMode(settingsState.popover.definition_language_mode);
+    });
 
     return true;
   }
@@ -2908,6 +3135,9 @@
     const swapButton = settingsModalEl.querySelector(".apl-settings-swap-languages");
     const triggerModeInputs = settingsModalEl.querySelectorAll(".apl-settings-trigger-mode");
     const panelModeInputs = settingsModalEl.querySelectorAll(".apl-settings-panel-open-mode");
+    const definitionLanguageModeInputs = settingsModalEl.querySelectorAll(
+      ".apl-settings-definition-language-mode"
+    );
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
 
     function persistSettingsNow() {
@@ -2920,6 +3150,7 @@
         shortcut_combo: settingsState.popover.shortcut_combo,
         auto_play_audio: settingsState.popover.auto_play_audio,
         panel_open_mode: settingsState.popover.panel_open_mode,
+        definition_language_mode: settingsState.popover.definition_language_mode,
       };
       settingsSaveGuardUntil = Date.now() + SETTINGS_SAVE_GUARD_MS;
       settingsMessage = "";
@@ -2990,6 +3221,12 @@
     });
 
     panelModeInputs.forEach(function (input) {
+      input.addEventListener("change", function () {
+        persistSettingsNow();
+      });
+    });
+
+    definitionLanguageModeInputs.forEach(function (input) {
       input.addEventListener("change", function () {
         persistSettingsNow();
       });

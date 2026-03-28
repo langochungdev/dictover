@@ -20,7 +20,7 @@ ADDON_DIR = Path(__file__).resolve().parent
 ADDON_PARENT_DIR = ADDON_DIR.parent
 ADDON_VENDOR_DIR = ADDON_DIR / "_vendor"
 ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
-ASSET_VERSION = "20260328g"
+ASSET_VERSION = "20260328h"
 ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
 
@@ -31,7 +31,10 @@ if str(ADDON_PARENT_DIR) not in sys.path:
 if ADDON_VENDOR_DIR.exists() and str(ADDON_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(ADDON_VENDOR_DIR))
 
-mw.addonManager.setWebExports(__name__, r"web/.*\.(css|js|html)")
+mw.addonManager.setWebExports(
+    __name__,
+    r"(web|assets)/.*\.(css|js|html|png|jpg|jpeg|gif|webp|svg)",
+)
 
 DEFAULT_RUNTIME_SETTINGS = {
     "enable_lookup": True,
@@ -40,6 +43,7 @@ DEFAULT_RUNTIME_SETTINGS = {
     "auto_play_audio": False,
     "popover_trigger_mode": "auto",
     "popover_shortcut": "Shift",
+    "popover_open_panel_mode": "none",
 }
 
 INSTALL_PING_URL = "https://langochung.me/api/ping/dictover"
@@ -243,6 +247,13 @@ def _normalize_shortcut(value: object) -> str:
     return shortcut or str(DEFAULT_RUNTIME_SETTINGS["popover_shortcut"])
 
 
+def _normalize_panel_open_mode(value: object) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {"details", "images"}:
+        return mode
+    return "none"
+
+
 def _coerce_bool(value: object, default: bool) -> bool:
     if value is None:
         return bool(default)
@@ -331,6 +342,11 @@ def _runtime_settings_from_config(config: dict) -> dict[str, object]:
             if _get_value("popover_shortcut") is not None
             else DEFAULT_RUNTIME_SETTINGS["popover_shortcut"]
         ),
+        "popover_open_panel_mode": _normalize_panel_open_mode(
+            _get_value("popover_open_panel_mode")
+            if _get_value("popover_open_panel_mode") is not None
+            else DEFAULT_RUNTIME_SETTINGS["popover_open_panel_mode"]
+        ),
     }
 
 
@@ -352,6 +368,11 @@ def _save_runtime_settings(partial_settings: dict[str, object]) -> dict[str, obj
 
     if "popover_shortcut" in partial_settings:
         merged["popover_shortcut"] = _normalize_shortcut(partial_settings["popover_shortcut"])
+
+    if "popover_open_panel_mode" in partial_settings:
+        merged["popover_open_panel_mode"] = _normalize_panel_open_mode(
+            partial_settings["popover_open_panel_mode"]
+        )
 
     return merged
 
@@ -493,9 +514,11 @@ def _send_to_webview(context: object, payload: dict) -> None:
 def on_card_show(html: str, card, context) -> str:
     css_tag = f"<link rel='stylesheet' href='{ASSET_CSS_PATH}'>"
     debug_flag = "true" if _is_debug_panel_always_visible() else "false"
+    addon_web_id_json = json.dumps(str(ADDON_WEB_ID), ensure_ascii=False)
     context_flag_tag = (
         "<script>window.__aplIsDeckBrowser=false;"
         f"window.__aplDebugPanelAlwaysVisible={debug_flag};"
+        f"window.__aplAddonWebId={addon_web_id_json};"
         "</script>"
     )
     js_tag = f"<script src='{ASSET_JS_PATH}'></script>"
@@ -526,9 +549,11 @@ def on_webview_will_set_content(web_content, context) -> None:
 
     head_content = getattr(web_content, "head", None)
     debug_flag = "true" if _is_debug_panel_always_visible() else "false"
+    addon_web_id_json = json.dumps(str(ADDON_WEB_ID), ensure_ascii=False)
     context_flag_tag = (
         "<script>window.__aplIsDeckBrowser=true;"
         f"window.__aplDebugPanelAlwaysVisible={debug_flag};"
+        f"window.__aplAddonWebId={addon_web_id_json};"
         "</script>"
     )
     if isinstance(head_content, str) and context_flag_tag not in head_content:

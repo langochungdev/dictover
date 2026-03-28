@@ -31,6 +31,8 @@
   let activeHtmlAudioElements = [];
   let lastLookupDetails = null;
   let imagePanelRequestSeq = 0;
+  let imagePanelLoaderEl = null;
+  let imagePanelRevealSeq = 0;
   const imageSearchCache = new Map();
   let lastAnchor = { x: 24, y: 24 };
   let pendingTimer = null;
@@ -48,6 +50,7 @@
       trigger_mode: "auto",
       shortcut_combo: "Shift",
       auto_play_audio: false,
+      panel_open_mode: "none",
     },
     resources: {
       mode: "api_only",
@@ -67,6 +70,21 @@
   const SETTINGS_TRIGGER_HOTZONE_TOP_PX = 120;
   const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
   const DEFAULT_SHORTCUT_COMBO = "Shift";
+  const DEFAULT_PANEL_OPEN_MODE = "none";
+  const SETTINGS_PANEL_MODE_COPY = {
+    en: {
+      title: "Panel on popover",
+      none: "none",
+      details: "show detail panel",
+      images: "show image panel",
+    },
+    vi: {
+      title: "Panel khi hien popover",
+      none: "không",
+      details: "hien panel chi tiết",
+      images: "hien panel ảnh",
+    },
+  };
   const SUPPORTED_LANGUAGES = [
     { code: "en", label: "English" },
     { code: "zh-CN", label: "Chinese" },
@@ -194,6 +212,9 @@
   const IMAGE_SCROLL_THRESHOLD_PX = 260;
   const IMAGE_CACHE_TTL_MS = 8 * 60 * 1000;
   const IMAGE_FETCH_TIMEOUT_MS = 2200;
+  const IMAGE_PRELOAD_MIN_COUNT = 4;
+  const IMAGE_PRELOAD_TIMEOUT_MS = 5000;
+  const IMAGE_PRELOAD_MAX_PAGES = 4;
   const AUDIO_ICON_SVG =
     '<svg class="apl-audio-icon" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">' +
     '<g fill="none" fill-rule="evenodd" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">' +
@@ -237,6 +258,20 @@
       .replace(/>/g, "&gt;")
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function getAddonAssetUrl(relativePath) {
+    const cleaned = String(relativePath || "").replace(/^\/+/, "");
+    if (!cleaned) {
+      return "";
+    }
+
+    const addonWebId = String(window.__aplAddonWebId || "").trim();
+    if (!addonWebId) {
+      return "/" + cleaned;
+    }
+
+    return "/_addons/" + encodeURIComponent(addonWebId) + "/" + cleaned;
   }
 
   function sendPycmd(command) {
@@ -365,13 +400,218 @@
   }
 
   function closeSubPanel() {
+    imagePanelRevealSeq += 1;
+    removeImagePanelLoader();
+
     if (subPanelEl) {
+      if (subPanelEl.__aplImageRevealTimerId) {
+        window.clearTimeout(subPanelEl.__aplImageRevealTimerId);
+        subPanelEl.__aplImageRevealTimerId = 0;
+      }
       subPanelEl.remove();
       subPanelEl = null;
     }
     subPanelType = "";
     syncDetailsToggleState(false);
     syncImageToggleState(false);
+  }
+
+  function removeImagePanelLoader() {
+    if (!imagePanelLoaderEl) {
+      return;
+    }
+
+    imagePanelLoaderEl.remove();
+    imagePanelLoaderEl = null;
+  }
+
+  function placeImagePanelLoader(loader, panel) {
+    if (!loader || !popoverEl) {
+      return;
+    }
+
+    if (!panel) {
+      placeSubPanel(loader);
+      return;
+    }
+
+    const margin = 12;
+    const gap = 8;
+    const popoverRect = popoverEl.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const placement = String(panel.getAttribute("data-placement") || "");
+    const loaderWidth = loader.offsetWidth || 180;
+    const loaderHeight = loader.offsetHeight || 48;
+    const maxX = Math.max(margin, window.innerWidth - loaderWidth - margin);
+    const maxY = Math.max(margin, window.innerHeight - loaderHeight - margin);
+    let direction = placement.split("-")[0];
+
+    if (["right", "left", "top", "bottom"].indexOf(direction) === -1) {
+      if (panelRect.left >= popoverRect.right) {
+        direction = "right";
+      } else if (panelRect.right <= popoverRect.left) {
+        direction = "left";
+      } else if (panelRect.top >= popoverRect.bottom) {
+        direction = "bottom";
+      } else {
+        direction = "top";
+      }
+    }
+
+    const alignRight = placement.indexOf("-right") >= 0;
+    const alignBottom = placement.indexOf("-bottom") >= 0;
+
+    let rawLeft = popoverRect.right + gap;
+    let rawTop = popoverRect.top;
+
+    if (direction === "right") {
+      rawLeft = popoverRect.right + gap;
+      rawTop = alignBottom ? popoverRect.bottom - loaderHeight : popoverRect.top;
+    } else if (direction === "left") {
+      rawLeft = popoverRect.left - loaderWidth - gap;
+      rawTop = alignBottom ? popoverRect.bottom - loaderHeight : popoverRect.top;
+    } else if (direction === "bottom") {
+      rawTop = popoverRect.bottom + gap;
+      rawLeft = alignRight ? popoverRect.right - loaderWidth : popoverRect.left;
+    } else {
+      rawTop = popoverRect.top - loaderHeight - gap;
+      rawLeft = alignRight ? popoverRect.right - loaderWidth : popoverRect.left;
+    }
+
+    loader.style.left = clamp(rawLeft, margin, maxX) + "px";
+    loader.style.top = clamp(rawTop, margin, maxY) + "px";
+    loader.setAttribute("data-placement", placement || direction + "-top");
+  }
+
+  function showImagePanelLoader(panel) {
+    removeImagePanelLoader();
+
+    const loader = document.createElement("div");
+    loader.className = "apl-image-preload-loader";
+    loader.setAttribute("role", "status");
+    loader.setAttribute("aria-live", "polite");
+    loader.innerHTML = renderLoadingDots("Dang tai hinh anh");
+
+    document.body.appendChild(loader);
+    imagePanelLoaderEl = loader;
+    placeImagePanelLoader(loader, panel || subPanelEl);
+  }
+
+  function waitForFirstImageThumbs(panel, minCount) {
+    const thumbs = panel ? panel.querySelectorAll(".apl-image-thumb") : null;
+    const targetCount = Math.min(
+      Math.max(0, Number(minCount || 0)),
+      thumbs ? thumbs.length : 0
+    );
+
+    if (!thumbs || targetCount <= 0) {
+      return Promise.resolve();
+    }
+
+    return new Promise(function (resolve) {
+      let settled = 0;
+      let finished = false;
+      const timerId = window.setTimeout(function () {
+        if (finished) {
+          return;
+        }
+        finished = true;
+        resolve();
+      }, IMAGE_PRELOAD_TIMEOUT_MS);
+
+      function markSettled() {
+        settled += 1;
+        if (finished || settled < targetCount) {
+          return;
+        }
+        finished = true;
+        window.clearTimeout(timerId);
+        resolve();
+      }
+
+      for (let index = 0; index < targetCount; index += 1) {
+        const image = thumbs[index];
+        if (!image) {
+          markSettled();
+          continue;
+        }
+
+        if (image.complete) {
+          markSettled();
+          continue;
+        }
+
+        image.addEventListener("load", markSettled, { once: true });
+        image.addEventListener("error", markSettled, { once: true });
+      }
+    });
+  }
+
+  function revealImageSubPanel(panel) {
+    if (!panel || panel !== subPanelEl || subPanelType !== "images") {
+      return;
+    }
+
+    if (panel.__aplImageRevealTimerId) {
+      window.clearTimeout(panel.__aplImageRevealTimerId);
+      panel.__aplImageRevealTimerId = 0;
+    }
+
+    panel.classList.remove("apl-subpanel--pending");
+    panel.removeAttribute("aria-hidden");
+    panel.__aplImagePanelRevealed = true;
+    removeImagePanelLoader();
+    placeImageSubPanel(panel);
+  }
+
+  function maybeRevealPendingImagePanel(panel, query) {
+    if (!panel || panel !== subPanelEl || subPanelType !== "images") {
+      return;
+    }
+
+    if (panel.__aplImagePanelRevealed) {
+      return;
+    }
+
+    const normalized = normalizeImageQuery(query);
+    const items = Array.isArray(panel.__aplImageItems) ? panel.__aplImageItems : [];
+    const itemCount = items.length;
+    const hasMore = panel.getAttribute("data-image-has-more") === "1";
+    const isLoading = panel.getAttribute("data-image-loading") === "1";
+    const preloadPages = Math.max(0, Number(panel.__aplImagePreloadPages || 0));
+
+    if (itemCount < IMAGE_PRELOAD_MIN_COUNT && hasMore && !isLoading && preloadPages < IMAGE_PRELOAD_MAX_PAGES) {
+      loadNextImagePage(panel, normalized);
+      return;
+    }
+
+    if (itemCount === 0) {
+      if (isLoading) {
+        return;
+      }
+      revealImageSubPanel(panel);
+      return;
+    }
+
+    if (itemCount < IMAGE_PRELOAD_MIN_COUNT && hasMore && isLoading) {
+      return;
+    }
+
+    const revealToken = ++imagePanelRevealSeq;
+    panel.__aplImageRevealToken = revealToken;
+
+    waitForFirstImageThumbs(panel, IMAGE_PRELOAD_MIN_COUNT).then(function () {
+      if (!panel || panel !== subPanelEl || subPanelType !== "images") {
+        return;
+      }
+      if (panel.__aplImagePanelRevealed) {
+        return;
+      }
+      if (Number(panel.__aplImageRevealToken || 0) !== revealToken) {
+        return;
+      }
+      revealImageSubPanel(panel);
+    });
   }
 
   function closeSettingsModal() {
@@ -1144,6 +1384,9 @@
     panel.setAttribute("data-image-next-page", "1");
     panel.setAttribute("data-image-has-more", "1");
     panel.setAttribute("data-image-loading", "0");
+    panel.__aplImagePreloadPages = 0;
+    panel.__aplImagePanelRevealed = false;
+    panel.__aplImageRevealToken = 0;
     appendImageCards(panel, query, [], true);
     setImageStatus(panel, "", false);
   }
@@ -1188,6 +1431,8 @@
     const sent = requestImageSearchViaPython(normalized, page, includeWikimedia, requestSeq);
     if (!sent) {
       panel.setAttribute("data-image-loading", "0");
+      setImageStatus(panel, "Khong gui duoc yeu cau tim anh.", true);
+      maybeRevealPendingImagePanel(panel, normalized);
       pushDebug("image.search send failed");
     }
   }
@@ -1212,6 +1457,7 @@
         panel.setAttribute("data-image-next-page", cached.nextPage ? String(cached.nextPage) : "1");
         panel.setAttribute("data-image-has-more", cached.nextPage ? "1" : "0");
         panel.setAttribute("data-image-loading", "0");
+        maybeRevealPendingImagePanel(panel, normalized);
         return;
       }
     }
@@ -1239,6 +1485,7 @@
     const options = Array.isArray(data && data.options ? data.options : [])
       ? data.options
       : [];
+    panel.__aplImagePreloadPages = Math.max(0, Number(panel.__aplImagePreloadPages || 0)) + 1;
     const countBefore = Array.isArray(panel.__aplImageItems) ? panel.__aplImageItems.length : 0;
     const added = appendImageCards(panel, query, options, false);
 
@@ -1264,6 +1511,8 @@
       Array.isArray(panel.__aplImageItems) ? panel.__aplImageItems : [],
       hasMore ? nextPage : null
     );
+
+    maybeRevealPendingImagePanel(panel, query);
   }
 
   function openImageSubPanel(container, query, forceRefresh) {
@@ -1278,8 +1527,10 @@
     panel.className = "apl-subpanel apl-subpanel--images";
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "false");
+    panel.setAttribute("aria-hidden", "true");
     panel.setAttribute("data-panel-type", "images");
     panel.setAttribute("data-image-query", normalized);
+    panel.classList.add("apl-subpanel--pending");
     panel.innerHTML =
       '<div class="apl-subpanel-body apl-image-subpanel-body">' +
       '<div class="apl-image-results">' +
@@ -1292,8 +1543,22 @@
     subPanelEl = panel;
     subPanelType = "images";
     placeImageSubPanel(panel);
+    showImagePanelLoader(panel);
     syncDetailsToggleState(false);
     syncImageToggleState(true);
+
+    panel.__aplImageRevealTimerId = window.setTimeout(function () {
+      if (!panel || panel !== subPanelEl || subPanelType !== "images") {
+        return;
+      }
+      if (panel.__aplImagePanelRevealed) {
+        return;
+      }
+      if (panel.getAttribute("data-image-loading") === "1") {
+        return;
+      }
+      revealImageSubPanel(panel);
+    }, IMAGE_PRELOAD_TIMEOUT_MS + 1200);
 
     const resultNode = panel.querySelector(".apl-image-results");
     if (resultNode) {
@@ -1328,6 +1593,38 @@
     }
 
     openImageSubPanel(container, query, false);
+  }
+
+  function autoOpenDetailsPanel(container, data) {
+    if (!container || !data || data.type !== "lookup") {
+      return;
+    }
+
+    const source = container.querySelector(".apl-details-source");
+    if (!source || !String(source.innerHTML || "").trim()) {
+      return;
+    }
+
+    const alreadyOpen = Boolean(subPanelEl) && subPanelType === "definition";
+    if (alreadyOpen) {
+      syncDetailsToggleState(true);
+      syncImageToggleState(false);
+      return;
+    }
+
+    openSubPanel(container);
+  }
+
+  function autoOpenConfiguredPanel(container, data) {
+    const mode = normalizePanelOpenMode(settingsState.popover.panel_open_mode);
+    if (mode === "details") {
+      autoOpenDetailsPanel(container, data);
+      return;
+    }
+
+    if (mode === "images") {
+      autoOpenImagePanel(container, data);
+    }
   }
 
 
@@ -1828,7 +2125,7 @@
 
     if (!popoverEl) {
       showPopover(lastAnchor.x, lastAnchor.y, data);
-      autoOpenImagePanel(popoverEl, data);
+      autoOpenConfiguredPanel(popoverEl, data);
       maybeAutoPlayAudio(data);
       return;
     }
@@ -1837,7 +2134,7 @@
     popoverEl.innerHTML = renderState(data);
     bindPopoverActions(popoverEl);
     placePopover(popoverEl, lastAnchor.x, lastAnchor.y);
-    autoOpenImagePanel(popoverEl, data);
+    autoOpenConfiguredPanel(popoverEl, data);
     maybeAutoPlayAudio(data);
   }
 
@@ -1849,14 +2146,22 @@
     if (subPanelEl) {
       if (subPanelType === "images") {
         placeImageSubPanel(subPanelEl);
+        if (imagePanelLoaderEl) {
+          placeImagePanelLoader(imagePanelLoaderEl, subPanelEl);
+        }
       } else {
         placeSubPanel(subPanelEl);
+        if (imagePanelLoaderEl) {
+          placeSubPanel(imagePanelLoaderEl);
+        }
       }
+    } else if (imagePanelLoaderEl) {
+      placeSubPanel(imagePanelLoaderEl);
     }
   }
 
   function handleGlobalScrollForPopover(event) {
-    if (subPanelType === "images") {
+    if (subPanelType === "images" && !imagePanelLoaderEl) {
       return;
     }
 
@@ -1874,6 +2179,7 @@
       trigger_mode: incomingSettings.popover_trigger_mode === "shortcut" ? "shortcut" : "auto",
       shortcut_combo: normalizeShortcutCombo(incomingSettings.popover_shortcut || DEFAULT_SHORTCUT_COMBO),
       auto_play_audio: Boolean(incomingSettings.auto_play_audio),
+      panel_open_mode: normalizePanelOpenMode(incomingSettings.popover_open_panel_mode),
     };
     pushDebug(
       "settings_state recv src=" +
@@ -1885,7 +2191,9 @@
         " shortcut=" +
         incomingState.shortcut_combo +
         " autoPlay=" +
-        String(incomingState.auto_play_audio)
+        String(incomingState.auto_play_audio) +
+        " panelMode=" +
+        incomingState.panel_open_mode
     );
 
     if (settingsSaveGuardSnapshot && nowTs <= settingsSaveGuardUntil) {
@@ -1894,7 +2202,8 @@
         incomingState.target_language !== settingsSaveGuardSnapshot.target_language ||
         incomingState.trigger_mode !== settingsSaveGuardSnapshot.trigger_mode ||
         incomingState.shortcut_combo !== settingsSaveGuardSnapshot.shortcut_combo ||
-        incomingState.auto_play_audio !== settingsSaveGuardSnapshot.auto_play_audio;
+        incomingState.auto_play_audio !== settingsSaveGuardSnapshot.auto_play_audio ||
+        incomingState.panel_open_mode !== settingsSaveGuardSnapshot.panel_open_mode;
 
       if (mismatch) {
         pushDebug("Bo qua settings_state cu vi khong khop state vua luu.");
@@ -1915,6 +2224,7 @@
       trigger_mode: incomingState.trigger_mode,
       shortcut_combo: incomingState.shortcut_combo,
       auto_play_audio: incomingState.auto_play_audio,
+      panel_open_mode: incomingState.panel_open_mode,
     };
 
     if (settingsState.popover.trigger_mode === "auto") {
@@ -1970,7 +2280,9 @@
         " shortcut=" +
         settingsState.popover.shortcut_combo +
         " autoPlay=" +
-        String(Boolean(settingsState.popover.auto_play_audio))
+        String(Boolean(settingsState.popover.auto_play_audio)) +
+        " panelMode=" +
+        settingsState.popover.panel_open_mode
     );
     const payload = encodeURIComponent(
       JSON.stringify({
@@ -1980,6 +2292,7 @@
         auto_play_audio: settingsState.popover.auto_play_audio,
         popover_trigger_mode: settingsState.popover.trigger_mode,
         popover_shortcut: settingsState.popover.shortcut_combo,
+        popover_open_panel_mode: settingsState.popover.panel_open_mode,
         languages: {
           source_language: settingsState.languages.source_language,
           target_language: settingsState.languages.target_language,
@@ -2069,6 +2382,17 @@
     }, SETTINGS_TRIGGER_BOOT_VISIBLE_MS);
   }
 
+  function configureSettingsTriggerButton(button) {
+    if (!button) {
+      return;
+    }
+
+    button.setAttribute("aria-label", "Open DictOver settings");
+    button.innerHTML =
+      '<span class="apl-settings-trigger-text">DictOver</span>' +
+      '<span class="apl-settings-trigger-icon" aria-hidden="true">&#9881;</span>';
+  }
+
   function ensureSettingsTrigger() {
     if (window.__aplIsDeckBrowser !== true) {
       const staleButtons = document.querySelectorAll(".apl-settings-trigger");
@@ -2098,6 +2422,7 @@
     const existing = document.querySelectorAll(".apl-settings-trigger");
     if (existing.length > 0) {
       settingsTriggerEl = existing[0];
+      configureSettingsTriggerButton(settingsTriggerEl);
       for (let i = 1; i < existing.length; i += 1) {
         existing[i].remove();
       }
@@ -2109,8 +2434,7 @@
     trigger.id = "apl-settings-trigger";
     trigger.className = "apl-settings-trigger";
     trigger.type = "button";
-    trigger.textContent = "setting";
-    trigger.setAttribute("aria-label", "Open Popup Lookup settings");
+    configureSettingsTriggerButton(trigger);
 
     trigger.addEventListener("click", function () {
       openSettingsModal();
@@ -2262,6 +2586,18 @@
     return settingsState.popover.trigger_mode === mode ? " checked" : "";
   }
 
+  function normalizePanelOpenMode(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "details" || normalized === "images") {
+      return normalized;
+    }
+    return DEFAULT_PANEL_OPEN_MODE;
+  }
+
+  function panelOpenModeChecked(mode) {
+    return normalizePanelOpenMode(settingsState.popover.panel_open_mode) === mode ? " checked" : "";
+  }
+
   function getSettingsUiCopy() {
     const targetLanguage = String(settingsState.languages.target_language || "en");
 
@@ -2280,12 +2616,22 @@
     return SETTINGS_UI_COPY.en;
   }
 
+  function getPanelModeUiCopy() {
+    const targetLanguage = String(settingsState.languages.target_language || "en").toLowerCase();
+    if (targetLanguage.indexOf("vi") === 0) {
+      return SETTINGS_PANEL_MODE_COPY.vi;
+    }
+    return SETTINGS_PANEL_MODE_COPY.en;
+  }
+
   function renderSettingsModal() {
     if (!settingsModalEl) {
       return;
     }
 
     const uiCopy = getSettingsUiCopy();
+    const panelCopy = getPanelModeUiCopy();
+    const avatarUrl = escapeHtml(getAddonAssetUrl("assets/avt-cat.jpg"));
 
     const errorHtml = settingsMessage
       ? '<div class="apl-settings-error">' + escapeHtml(settingsMessage) + "</div>"
@@ -2297,6 +2643,15 @@
     settingsModalEl.innerHTML =
       '<div class="apl-settings-overlay" role="dialog" aria-modal="true">' +
       '<div class="apl-settings-modal">' +
+      '<div class="apl-settings-header">' +
+      '<div class="apl-settings-brand">' +
+      '<img class="apl-settings-avatar" src="' +
+      avatarUrl +
+      '" alt="Cat avatar" />' +
+      '<a class="apl-settings-site-link" href="https://langochung.me" target="_blank" rel="noopener noreferrer">langochung.me</a>' +
+      "</div>" +
+      '<button class="apl-button apl-settings-close" type="button" aria-label="Close settings">✕</button>' +
+      "</div>" +
       '<div class="apl-settings-section">' +
       '<div class="apl-settings-language-row">' +
       '<label class="apl-settings-field"><span>' +
@@ -2345,6 +2700,26 @@
       escapeHtml(uiCopy.shortcut_hint) +
       "</div>" +
       "</div>" +
+      "</div>" +
+      '<div class="apl-settings-section">' +
+      '<div class="apl-settings-section-title">' +
+      escapeHtml(panelCopy.title) +
+      "</div>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-panel-open-mode" type="radio" name="apl-panel-open-mode" value="none"' +
+      panelOpenModeChecked("none") +
+      "> " +
+      escapeHtml(panelCopy.none) +
+      "</label>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-panel-open-mode" type="radio" name="apl-panel-open-mode" value="details"' +
+      panelOpenModeChecked("details") +
+      "> " +
+      escapeHtml(panelCopy.details) +
+      "</label>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-panel-open-mode" type="radio" name="apl-panel-open-mode" value="images"' +
+      panelOpenModeChecked("images") +
+      "> " +
+      escapeHtml(panelCopy.images) +
+      "</label>" +
       "</div>" +
       '<div class="apl-settings-section">' +
       '<label class="apl-settings-toggle"><input class="apl-settings-auto-play-audio" type="checkbox"' +
@@ -2443,12 +2818,16 @@
     const sourceSelect = settingsModalEl.querySelector(".apl-settings-source-language");
     const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
     const triggerModeInput = settingsModalEl.querySelector(".apl-settings-trigger-mode:checked");
+    const panelModeInput = settingsModalEl.querySelector(".apl-settings-panel-open-mode:checked");
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
     const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
 
     const sourceLanguage = sourceSelect ? String(sourceSelect.value || "auto") : settingsState.languages.source_language;
     const targetLanguage = targetSelect ? String(targetSelect.value || "vi") : settingsState.languages.target_language;
     const triggerMode = triggerModeInput ? String(triggerModeInput.value || "auto") : settingsState.popover.trigger_mode;
+    const panelOpenMode = panelModeInput
+      ? normalizePanelOpenMode(panelModeInput.value)
+      : normalizePanelOpenMode(settingsState.popover.panel_open_mode);
     const shortcutCombo = normalizeShortcutCombo(shortcutInput ? shortcutInput.value : settingsState.popover.shortcut_combo);
     const autoPlayAudio = Boolean(autoPlayInput && autoPlayInput.checked);
 
@@ -2458,6 +2837,7 @@
       trigger_mode: triggerMode === "shortcut" ? "shortcut" : "auto",
       shortcut_combo: shortcutCombo,
       auto_play_audio: autoPlayAudio,
+      panel_open_mode: panelOpenMode,
     };
   }
 
@@ -2467,6 +2847,7 @@
     settingsState.popover.trigger_mode = nextValues.trigger_mode;
     settingsState.popover.shortcut_combo = nextValues.shortcut_combo;
     settingsState.popover.auto_play_audio = nextValues.auto_play_audio;
+    settingsState.popover.panel_open_mode = normalizePanelOpenMode(nextValues.panel_open_mode);
   }
 
   function syncSettingsFormIfOpen() {
@@ -2478,6 +2859,7 @@
     const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
     const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
+    const panelModeInputs = settingsModalEl.querySelectorAll(".apl-settings-panel-open-mode");
     const autoMode = settingsModalEl.querySelector(
       '.apl-settings-trigger-mode[value="auto"]'
     );
@@ -2510,6 +2892,9 @@
     if (shortcutMode) {
       shortcutMode.checked = settingsState.popover.trigger_mode === "shortcut";
     }
+    panelModeInputs.forEach(function (input) {
+      input.checked = normalizePanelOpenMode(input.value) === normalizePanelOpenMode(settingsState.popover.panel_open_mode);
+    });
 
     return true;
   }
@@ -2522,6 +2907,7 @@
     const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
     const swapButton = settingsModalEl.querySelector(".apl-settings-swap-languages");
     const triggerModeInputs = settingsModalEl.querySelectorAll(".apl-settings-trigger-mode");
+    const panelModeInputs = settingsModalEl.querySelectorAll(".apl-settings-panel-open-mode");
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
 
     function persistSettingsNow() {
@@ -2533,6 +2919,7 @@
         trigger_mode: settingsState.popover.trigger_mode,
         shortcut_combo: settingsState.popover.shortcut_combo,
         auto_play_audio: settingsState.popover.auto_play_audio,
+        panel_open_mode: settingsState.popover.panel_open_mode,
       };
       settingsSaveGuardUntil = Date.now() + SETTINGS_SAVE_GUARD_MS;
       settingsMessage = "";
@@ -2598,6 +2985,12 @@
             " keep autoPlay=" +
             String(settingsState.popover.auto_play_audio)
         );
+        persistSettingsNow();
+      });
+    });
+
+    panelModeInputs.forEach(function (input) {
+      input.addEventListener("change", function () {
         persistSettingsNow();
       });
     });

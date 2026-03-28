@@ -541,6 +541,26 @@
     max-height: min(420px, calc(100vh - 24px));
 }
 
+.apl-subpanel--pending {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.apl-image-preload-loader {
+    position: fixed;
+    z-index: 10002;
+    width: min(180px, calc(100vw - 24px));
+    border: 1px solid #d7dde9;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 16px 34px rgba(18, 24, 38, 0.18);
+    padding: 10px 12px;
+}
+
+.apl-image-preload-loader .apl-loading {
+    min-height: 26px;
+}
+
 .apl-image-subpanel-body {
     padding: 6px;
     overflow: hidden;
@@ -667,6 +687,9 @@
     border: 1px solid #bfcced;
     border-radius: 999px;
     padding: 6px 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: #ffffff;
     color: #14306f;
     font-size: 12px;
@@ -674,6 +697,15 @@
     cursor: pointer;
     box-shadow: 0 8px 18px rgba(22, 30, 44, 0.16);
     transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.apl-settings-trigger-text {
+    line-height: 1;
+}
+
+.apl-settings-trigger-icon {
+    line-height: 1;
+    font-size: 13px;
 }
 
 .apl-settings-trigger--hidden {
@@ -699,8 +731,8 @@
     align-items: center;
     justify-content: center;
     padding: 14px;
-    background: rgba(15, 23, 42, 0.4);
-    backdrop-filter: blur(2px);
+    background: rgba(0, 0, 0, 0.56);
+    backdrop-filter: blur(10px);
 }
 
 .apl-settings-modal {
@@ -718,9 +750,41 @@
 
 .apl-settings-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 10px;
+}
+
+.apl-settings-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.apl-settings-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid #d7dde9;
+    flex: 0 0 auto;
+}
+
+.apl-settings-site-link {
+    color: #1f2f49;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+@media (hover: hover) {
+
+    .apl-settings-site-link:hover,
+    .apl-settings-site-link:focus-visible {
+        text-decoration: underline;
+    }
 }
 
 .apl-settings-title-wrap {
@@ -754,10 +818,11 @@
 }
 
 .apl-settings-close {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 1;
+    position: static;
+    margin-left: auto;
+    min-width: 34px;
+    padding: 5px 10px;
+    line-height: 1;
 }
 
 .apl-settings-section-title {

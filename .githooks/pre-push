@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
+PENDING_RELEASE_BUILD_FILE="$REPO_ROOT/.git/.pending_release_build"
+
 if ! command -v cz >/dev/null 2>&1; then
   echo "Commitizen is required. Install with: pip install -r requirements-dev.txt" >&2
   exit 1
@@ -18,6 +22,7 @@ set -e
 
 if [[ $status -eq 0 ]]; then
   echo "$output"
+  printf "%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$PENDING_RELEASE_BUILD_FILE"
   echo "Version and changelog were updated. Push canceled; run git push --follow-tags again." >&2
   exit 1
 fi

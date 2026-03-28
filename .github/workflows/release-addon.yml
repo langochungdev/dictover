@@ -83,6 +83,50 @@ jobs:
           echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
           echo "title=${TITLE}" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare release notes from changelog
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.meta.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          RELEASE_NOTES_FILE="$RUNNER_TEMP/release_notes.md"
+
+          PREV_TAG="$(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -Fxv "$TAG" | head -n1 || true)"
+
+          CHANGELOG_SECTION="$(awk -v wanted="v${VERSION}" '
+            /^## / {
+              if (found) {
+                exit
+              }
+              if ($0 ~ ("^## " wanted "([[:space:]]|\\(|$)")) {
+                found = 1
+              }
+            }
+            found {
+              print
+            }
+          ' CHANGELOG.md)"
+
+          {
+            if [[ -n "$PREV_TAG" ]]; then
+              echo "Full Changelog: $PREV_TAG...$TAG"
+            fi
+            echo
+            if [[ -n "$CHANGELOG_SECTION" ]]; then
+              echo "$CHANGELOG_SECTION"
+            else
+              echo "## v${VERSION}"
+              echo
+              echo "- Release notes were not found in CHANGELOG.md for this version."
+            fi
+          } > "$RELEASE_NOTES_FILE"
+
+          echo "file=$RELEASE_NOTES_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,6 +151,6 @@ jobs:
           else
             gh release create "$TAG" dist/*.ankiaddon \
               --title "$TITLE" \
-              --generate-notes \
+              --notes-file "${{ steps.notes.outputs.file }}" \
               "${EXTRA_ARGS[@]}"
           fi

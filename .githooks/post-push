@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
+PENDING_RELEASE_BUILD_FILE="$REPO_ROOT/.git/.pending_release_build"
+
+if [[ ! -f "$PENDING_RELEASE_BUILD_FILE" ]]; then
+  exit 0
+fi
+
+if ! command -v python >/dev/null 2>&1; then
+  echo "python is required to run release build after push." >&2
+  exit 1
+fi
+
+set +e
+build_output="$(cd "$REPO_ROOT" && python scripts/build_release.py 2>&1)"
+build_status=$?
+set -e
+
+if [[ $build_status -ne 0 ]]; then
+  echo "$build_output" >&2
+  echo "Post-push build failed. Keep $PENDING_RELEASE_BUILD_FILE for retry on next successful push." >&2
+  exit $build_status
+fi
+
+echo "$build_output"
+echo "Post-push build completed after successful release push."
+rm -f "$PENDING_RELEASE_BUILD_FILE"

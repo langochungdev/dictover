@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/OWNER/REPO/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/OWNER/REPO/releases/tag/v0.1.0
 
+## v0.5.0 (2026-03-29)
+
+### Feat
+
+- enhance loading states and layout adjustments in popup rendering
+- update header alignment and enhance timeout handling in popup
+- enhance handle_lookup to fallback on Google translation and add tests for fallback scenarios
+- update extension name to include 'DictOver' for better branding
+- implement post-push hook for automated release builds and prepare release notes from changelog
+
 ## v0.4.0 (2026-03-28)
 
 ### Feat

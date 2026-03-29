@@ -1810,12 +1810,7 @@
   function renderState(data) {
     if (data && data.loading) {
       return (
-        '<div class="apl-header">' +
-        '<span>' +
-        escapeHtml(data.word || "Lookup") +
-        "</span>" +
-        "</div>" +
-        '<div class="apl-body">' +
+        '<div class="apl-body apl-body--loading-only">' +
         renderLoadingDots("Dang tra") +
         "</div>"
       );
@@ -1839,13 +1834,18 @@
       const audioLang = escapeHtml(data.audio_lang || settingsState.languages.source_language || "");
       const imageQuery = escapeHtml(resolveImageQuery(data));
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
+      const shouldHideActionsUntilHover = /\s/.test((data.original || "").trim());
+      const translateBodyClass = shouldHideActionsUntilHover
+        ? "apl-body apl-translate-compact apl-translate-hover-actions"
+        : "apl-body apl-translate-compact";
       return (
-        '<div class="apl-body apl-translate-compact">' +
-        '<div class="apl-translate-top">' +
-        '<div class="apl-translate-en">' +
-        original +
+        '<div class="' +
+        translateBodyClass +
+        '">' +
+        '<div class="apl-translate-vi apl-translate-vi--primary">' +
+        translated +
         "</div>" +
-        '<div class="apl-inline-actions">' +
+        '<div class="apl-inline-actions apl-translate-inline-actions">' +
         '<button class="apl-button apl-audio" type="button" aria-label="Play audio" data-word="' +
         original +
         '" data-audio="' +
@@ -1866,10 +1866,6 @@
         SETTINGS_ICON_SVG +
         "</button>" +
         "</div>" +
-        "</div>" +
-        '<div class="apl-translate-vi">' +
-        translated +
-        "</div>" +
         "</div>"
       );
     }
@@ -1887,6 +1883,7 @@
         : data.definition_translated
           ? escapeHtml(data.definition_translated)
         : englishDefinition;
+      const summaryMeaning = translated || displayDefinition || englishDefinition;
       const pos = firstPartOfSpeech(meanings);
       const imageQuery = escapeHtml(resolveImageQuery(data));
       const audioDisabled = toolSettings.enable_audio ? "" : " disabled";
@@ -1896,8 +1893,8 @@
         '<div class="apl-body apl-lookup-compact">' +
         '<div class="apl-lookup-headerline">' +
         '<div class="apl-lookup-headertext">' +
-        '<span class="apl-lookup-word">' +
-        word +
+        '<span class="apl-lookup-summary">' +
+        summaryMeaning +
         "</span>" +
         '<span class="apl-lookup-phonetic-inline">' +
         phonetic +
@@ -1928,9 +1925,6 @@
         "</div>" +
         "</div>" +
         "</div>" +
-        '<div class="apl-lookup-vi">' +
-        translated +
-        "</div>" +
         '<button class="apl-lookup-definition-toggle" type="button" aria-expanded="false">' +
         '<span class="apl-definition-toggle-icon">' +
         detailsToggleLabels.closed +
@@ -1947,10 +1941,7 @@
     }
 
     return (
-      '<div class="apl-header">' +
-      '<span>Lookup</span>' +
-      "</div>" +
-      '<div class="apl-body">' +
+      '<div class="apl-body apl-body--loading-only">' +
       renderLoadingDots("Dang cho du lieu") +
       "</div>"
     );

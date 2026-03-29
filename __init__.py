@@ -845,125 +845,6 @@ def _google_cse_search_images(query: str, page: int, page_size: int) -> tuple[li
     return (options, next_page, "")
 
 
-def _openverse_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
-    safe_query = _normalize_image_query(query)
-    if not safe_query:
-        return ([], None, "")
-
-    safe_page = max(1, _coerce_int(page, 1))
-    safe_page_size = max(6, min(IMAGE_SEARCH_PAGE_SIZE_MAX, _coerce_int(page_size, IMAGE_SEARCH_PAGE_SIZE_DEFAULT)))
-
-    url = (
-        "https://api.openverse.org/v1/images/?q="
-        + quote(safe_query)
-        + "&page_size="
-        + str(safe_page_size)
-        + "&page="
-        + str(safe_page)
-    )
-
-    try:
-        payload = _load_json_from_url(url)
-    except Exception as error:
-        return ([], None, f"openverse_fetch_failed: {error}")
-
-    results = payload.get("results")
-    if not isinstance(results, list):
-        detail = str(payload.get("detail", "")).strip()
-        if detail:
-            return ([], None, f"openverse_invalid: {detail}")
-        return ([], None, "")
-
-    options: list[dict[str, str]] = []
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        src = str(item.get("url", "")).strip()
-        if not src:
-            continue
-        options.append(
-            {
-                "src": src,
-                "source": "Openverse",
-                "title": str(item.get("title", "")).strip() or "Image",
-                "pageUrl": str(item.get("foreign_landing_url", "")).strip() or src,
-            }
-        )
-
-    current_page = max(1, _coerce_int(payload.get("page", safe_page), safe_page))
-    page_count = max(current_page, _coerce_int(payload.get("page_count", current_page), current_page))
-    next_page = current_page + 1 if current_page < page_count else None
-
-    return (options, next_page, "")
-
-
-def _wikimedia_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
-    safe_query = _normalize_image_query(query)
-    if not safe_query:
-        return ([], None, "")
-
-    safe_page = max(1, _coerce_int(page, 1))
-    safe_page_size = max(6, min(IMAGE_SEARCH_PAGE_SIZE_MAX, _coerce_int(page_size, IMAGE_SEARCH_PAGE_SIZE_DEFAULT)))
-    offset = (safe_page - 1) * safe_page_size
-
-    search_text = quote(safe_query)
-    url = (
-        "https://commons.wikimedia.org/w/api.php?origin=*&action=query&format=json&generator=search"
-        + "&gsrnamespace=6&gsrlimit="
-        + str(safe_page_size)
-        + "&gsroffset="
-        + str(offset)
-        + "&gsrsearch="
-        + search_text
-        + "&prop=imageinfo|info&iiprop=url&iiurlwidth=960&iiurlheight=720&inprop=url"
-    )
-
-    try:
-        payload = _load_json_from_url(url)
-    except Exception as error:
-        return ([], None, f"wikimedia_fetch_failed: {error}")
-
-    query_payload = payload.get("query")
-    if not isinstance(query_payload, dict):
-        detail = str(payload.get("error", "")).strip()
-        return ([], None, detail)
-
-    pages = query_payload.get("pages")
-    if not isinstance(pages, dict):
-        pages = {}
-
-    options: list[dict[str, str]] = []
-    for page_data in pages.values():
-        if not isinstance(page_data, dict):
-            continue
-        image_info = page_data.get("imageinfo")
-        if not isinstance(image_info, list) or not image_info:
-            continue
-        first_info = image_info[0]
-        if not isinstance(first_info, dict):
-            continue
-        src = str(first_info.get("thumburl") or first_info.get("url") or "").strip()
-        if not src:
-            continue
-        raw_title = str(page_data.get("title", "")).replace("File:", "").replace("_", " ").strip()
-        page_url = str(first_info.get("descriptionurl") or page_data.get("fullurl") or src).strip()
-        options.append(
-            {
-                "src": src,
-                "source": "Wikimedia",
-                "title": raw_title or "Image",
-                "pageUrl": page_url,
-            }
-        )
-
-    next_page = None
-    continuation = payload.get("continue")
-    if isinstance(continuation, dict) and continuation.get("gsroffset") is not None:
-        next_page = safe_page + 1
-
-    return (options, next_page, "")
-
-
 def _wikipedia_search_images(query: str, page: int, page_size: int) -> tuple[list[dict[str, str]], int | None, str]:
     safe_query = _normalize_image_query(query)
     if not safe_query:
@@ -1104,8 +985,6 @@ def _image_relevance_score(query: str, item: dict[str, str]) -> int:
 
     if source == "wikipedia":
         score += 35
-    elif source == "wikimedia":
-        score += 10
 
     return score
 

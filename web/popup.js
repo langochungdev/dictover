@@ -1175,184 +1175,6 @@
     });
   }
 
-  function parseOpenverseOptions(payload) {
-    const results = payload && Array.isArray(payload.results) ? payload.results : [];
-    const options = results
-      .map(function (item) {
-        const src = String(item && item.url ? item.url : "").trim();
-        if (!src) {
-          return null;
-        }
-
-        return {
-          src: src,
-          source: "Openverse",
-          title: String(item.title || "").trim() || "Image",
-          pageUrl: String(item.foreign_landing_url || src).trim(),
-        };
-      })
-      .filter(Boolean);
-
-    const page = Math.max(1, Number(payload && payload.page ? payload.page : 1));
-    const pageCount = Math.max(page, Number(payload && payload.page_count ? payload.page_count : page));
-    const nextPage = page < pageCount ? page + 1 : null;
-
-    return {
-      options: options,
-      nextPage: nextPage,
-    };
-  }
-
-  function fetchOpenverseImageOptions(query, page) {
-    const normalized = normalizeImageQuery(query);
-    if (!normalized) {
-      return Promise.resolve({ options: [], nextPage: null });
-    }
-
-    const safePage = Math.max(1, Number(page || 1));
-    const url =
-      "https://api.openverse.org/v1/images/?q=" +
-      encodeURIComponent(normalized) +
-      "&page_size=" +
-      String(IMAGE_PAGE_SIZE) +
-      "&page=" +
-      String(safePage);
-
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const request = {
-      cache: "force-cache",
-    };
-    if (controller) {
-      request.signal = controller.signal;
-    }
-
-    return new Promise(function (resolve, reject) {
-      const timeoutId = window.setTimeout(function () {
-        if (controller) {
-          controller.abort();
-        }
-        reject(new Error("openverse_timeout"));
-      }, IMAGE_FETCH_TIMEOUT_MS);
-
-      fetch(url, request)
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("openverse_http_" + String(response.status));
-          }
-          return response.json();
-        })
-        .then(function (payload) {
-          window.clearTimeout(timeoutId);
-          resolve(parseOpenverseOptions(payload));
-        })
-        .catch(function (error) {
-          window.clearTimeout(timeoutId);
-          reject(error);
-        });
-    });
-  }
-
-  function parseWikimediaOptions(payload) {
-    const pages = payload && payload.query && payload.query.pages ? payload.query.pages : null;
-    if (!pages || typeof pages !== "object") {
-      return [];
-    }
-
-    return Object.keys(pages)
-      .map(function (key) {
-        const page = pages[key] || {};
-        const imageInfo = Array.isArray(page.imageinfo) ? page.imageinfo[0] : null;
-        const src = String((imageInfo && (imageInfo.thumburl || imageInfo.url)) || "").trim();
-        if (!src) {
-          return null;
-        }
-
-        const title = String(page.title || "").replace(/^File:/i, "").replace(/_/g, " ").trim();
-        const pageUrl =
-          String((imageInfo && imageInfo.descriptionurl) || page.fullurl || src || "").trim();
-
-        return {
-          src: src,
-          source: "Wikimedia",
-          title: title,
-          pageUrl: pageUrl,
-        };
-      })
-      .filter(Boolean);
-  }
-
-  function fetchWikimediaImageOptions(query) {
-    const normalized = normalizeImageQuery(query);
-    if (!normalized) {
-      return Promise.resolve([]);
-    }
-
-    const search = encodeURIComponent(normalized + " filetype:jpg OR filetype:png OR filetype:webp");
-    const url =
-      "https://commons.wikimedia.org/w/api.php?origin=*&action=query&format=json&generator=search" +
-      "&gsrnamespace=6&gsrlimit=8&gsrsearch=" +
-      search +
-      "&prop=imageinfo|info&iiprop=url&iiurlwidth=640&iiurlheight=360&inprop=url";
-
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const request = {
-      cache: "force-cache",
-    };
-    if (controller) {
-      request.signal = controller.signal;
-    }
-
-    return new Promise(function (resolve, reject) {
-      const timeoutId = window.setTimeout(function () {
-        if (controller) {
-          controller.abort();
-        }
-        reject(new Error("image_search_timeout"));
-      }, IMAGE_FETCH_TIMEOUT_MS);
-
-      fetch(url, request)
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("image_search_http_" + String(response.status));
-          }
-          return response.json();
-        })
-        .then(function (payload) {
-          window.clearTimeout(timeoutId);
-          resolve(parseWikimediaOptions(payload));
-        })
-        .catch(function (error) {
-          window.clearTimeout(timeoutId);
-          reject(error);
-        });
-    });
-  }
-
-  function mergeImageOptions(primary, fallback) {
-    const output = [];
-    const seen = Object.create(null);
-
-    function append(list) {
-      (Array.isArray(list) ? list : []).forEach(function (item) {
-        const src = String(item && item.src ? item.src : "").trim();
-        if (!src || seen[src]) {
-          return;
-        }
-        seen[src] = true;
-        output.push({
-          src: src,
-          source: String(item.source || "Web"),
-          title: String(item.title || "Image"),
-          pageUrl: String(item.pageUrl || src),
-        });
-      });
-    }
-
-    append(primary);
-    append(fallback);
-    return output;
-  }
-
   function renderImageCards(options, query, startIndex) {
     const list = Array.isArray(options) ? options : [];
     const offset = Math.max(0, Number(startIndex || 0));
@@ -1495,12 +1317,11 @@
     setImageStatus(panel, "", false);
   }
 
-  function requestImageSearchViaPython(query, page, includeWikimedia, requestSeq) {
+  function requestImageSearchViaPython(query, page, requestSeq) {
     const payload = {
       query: String(query || ""),
       page: Math.max(1, Number(page || 1)),
       page_size: IMAGE_PAGE_SIZE,
-      include_wikimedia: Boolean(includeWikimedia),
       request_seq: Math.max(0, Number(requestSeq || 0)),
     };
 
@@ -1531,8 +1352,7 @@
     panel.setAttribute("data-image-loading", "1");
     setImageStatus(panel, "", false);
 
-    const includeWikimedia = page === 1;
-    const sent = requestImageSearchViaPython(normalized, page, includeWikimedia, requestSeq);
+    const sent = requestImageSearchViaPython(normalized, page, requestSeq);
     if (!sent) {
       panel.setAttribute("data-image-loading", "0");
       setImageStatus(panel, "Khong gui duoc yeu cau tim anh.", true);

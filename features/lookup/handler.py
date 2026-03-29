@@ -192,6 +192,33 @@ def handle_lookup(word: str) -> dict[str, Any]:
             "meanings": parsed.get("meanings") or [],
         }
     except LookupError:
-        return {"type": "error", "message": "Khong tim thay tu nay."}
+        try:
+            translated = translation_service.translate_text(
+                normalized,
+                lookup_language,
+                target_language,
+            ).strip()
+        except Exception:
+            translated = ""
+
+        if not translated:
+            return {"type": "error", "message": "Khong tim thay tu nay."}
+
+        audio_url = tts_service.build_google_tts_url(normalized, lookup_language)
+        return {
+            "type": "lookup",
+            "word": normalized,
+            "translated": translated,
+            "phonetic": "",
+            "audio_url": audio_url,
+            "audio_lang": lookup_language,
+            "definition_display": translated,
+            "meanings": [
+                {
+                    "partOfSpeech": "",
+                    "definitions": [{"definition": translated, "example": ""}],
+                }
+            ],
+        }
     except Exception:
         return {"type": "error", "message": "Khong the tra tu luc nay."}

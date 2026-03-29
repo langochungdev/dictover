@@ -122,11 +122,17 @@
 .apl-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 8px;
     padding: 5px 6px;
     border-bottom: 1px solid #edf1f7;
     font-weight: 600;
+}
+
+.apl-header>span {
+    display: block;
+    width: 100%;
+    text-align: left;
 }
 
 .apl-body {

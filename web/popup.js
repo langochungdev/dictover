@@ -314,6 +314,7 @@
   const IMAGE_FETCH_TIMEOUT_MS = 2200;
   const IMAGE_PRELOAD_MIN_COUNT = 4;
   const IMAGE_PRELOAD_TIMEOUT_MS = 5000;
+  const COMMAND_RESPONSE_SOFT_TIMEOUT_MS = 8000;
   const IMAGE_PRELOAD_MAX_PAGES = 4;
   const AUDIO_ICON_SVG =
     '<svg class="apl-audio-icon" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">' +
@@ -941,12 +942,9 @@
   function armPendingTimeout(command, text) {
     clearPendingTimeout();
     pendingTimer = window.setTimeout(function () {
-      showPopover(lastAnchor.x, lastAnchor.y, {
-        type: "error",
-        message: "Khong nhan duoc phan hoi tu Python sau 3s.",
-      });
-      pushDebug("timeout command=" + command + " text=" + text);
-    }, 3000);
+      pendingTimer = null;
+      pushDebug("slow response command=" + command + " text=" + text);
+    }, COMMAND_RESPONSE_SOFT_TIMEOUT_MS);
   }
 
   function clearPendingTimeout() {

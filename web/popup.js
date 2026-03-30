@@ -49,7 +49,8 @@
     popover: {
       trigger_mode: "auto",
       shortcut_combo: "Shift",
-      auto_play_audio: false,
+      auto_play_audio_mode: "off",
+      hide_home_settings_button: false,
       panel_open_mode: "none",
       definition_language_mode: "output",
     },
@@ -71,6 +72,7 @@
   const SETTINGS_TRIGGER_HOTZONE_TOP_PX = 120;
   const SETTINGS_TRIGGER_HOTZONE_RIGHT_PX = 120;
   const DEFAULT_SHORTCUT_COMBO = "Shift";
+  const DEFAULT_AUTO_PLAY_AUDIO_MODE = "off";
   const DEFAULT_PANEL_OPEN_MODE = "none";
   const DEFAULT_DEFINITION_LANGUAGE_MODE = "output";
   const SETTINGS_PANEL_MODE_COPY = {
@@ -208,7 +210,11 @@
       shortcut_placeholder: "Press shortcut",
       shortcut_hint:
         "Select this field and press a key or key combination, for example: Shift, Alt+1, Ctrl+Shift+L.",
-      auto_play_audio: "auto play audio",
+      hide_home_settings_button: "Hide settings button on home",
+      auto_play_audio_title: "Auto play audio",
+      auto_play_audio_mode_off: "Do not auto play",
+      auto_play_audio_mode_word: "Auto play for single word only",
+      auto_play_audio_mode_all: "Auto play for word and sentence",
     },
     vi: {
       input_language: "Ngôn ngữ vào",
@@ -219,7 +225,11 @@
       shortcut_label: "Phím tắt",
       shortcut_placeholder: "Nhấn tổ hợp phím",
       shortcut_hint: "Chọn ô rồi nhấn trực tiếp phím hoặc tổ hợp phím, ví dụ: Shift, Alt+1, Ctrl+Shift+L.",
-      auto_play_audio: "tự động phát audio",
+      hide_home_settings_button: "Ẩn nút settings ở home",
+      auto_play_audio_title: "Tự động phát audio",
+      auto_play_audio_mode_off: "Không tự phát",
+      auto_play_audio_mode_word: "Chỉ tự phát khi tra 1 từ",
+      auto_play_audio_mode_all: "Tự phát cho từ và câu",
     },
     "zh-CN": {
       input_language: "输入语言",
@@ -230,7 +240,11 @@
       shortcut_label: "快捷键",
       shortcut_placeholder: "按下快捷键",
       shortcut_hint: "点击此输入框后直接按键或组合键，例如：Shift、Alt+1、Ctrl+Shift+L。",
-      auto_play_audio: "自动播放音频",
+      hide_home_settings_button: "隐藏首页设置按钮",
+      auto_play_audio_title: "自动播放音频",
+      auto_play_audio_mode_off: "不自动播放",
+      auto_play_audio_mode_word: "仅单词时自动播放",
+      auto_play_audio_mode_all: "单词和句子都自动播放",
     },
     ja: {
       input_language: "入力言語",
@@ -241,7 +255,11 @@
       shortcut_label: "ショートカット",
       shortcut_placeholder: "ショートカットを押す",
       shortcut_hint: "この欄を選択してキーまたはキーの組み合わせを押してください。例: Shift、Alt+1、Ctrl+Shift+L。",
-      auto_play_audio: "音声を自動再生",
+      hide_home_settings_button: "ホームで設定ボタンを隠す",
+      auto_play_audio_title: "音声の自動再生",
+      auto_play_audio_mode_off: "自動再生しない",
+      auto_play_audio_mode_word: "単語1語のときだけ自動再生",
+      auto_play_audio_mode_all: "単語と文の両方を自動再生",
     },
     ko: {
       input_language: "입력 언어",
@@ -252,7 +270,11 @@
       shortcut_label: "단축키",
       shortcut_placeholder: "단축키를 누르세요",
       shortcut_hint: "이 입력칸을 선택한 뒤 키 또는 키 조합을 눌러 주세요. 예: Shift, Alt+1, Ctrl+Shift+L.",
-      auto_play_audio: "오디오 자동 재생",
+      hide_home_settings_button: "홈에서 설정 버튼 숨기기",
+      auto_play_audio_title: "오디오 자동 재생",
+      auto_play_audio_mode_off: "자동 재생 안 함",
+      auto_play_audio_mode_word: "단어 1개일 때만 자동 재생",
+      auto_play_audio_mode_all: "단어와 문장 모두 자동 재생",
     },
     ru: {
       input_language: "Язык ввода",
@@ -263,7 +285,11 @@
       shortcut_label: "Горячая клавиша",
       shortcut_placeholder: "Нажмите сочетание клавиш",
       shortcut_hint: "Выберите это поле и нажмите клавишу или сочетание клавиш, например: Shift, Alt+1, Ctrl+Shift+L.",
-      auto_play_audio: "автовоспроизведение аудио",
+      hide_home_settings_button: "Скрыть кнопку настроек на главной",
+      auto_play_audio_title: "Автовоспроизведение аудио",
+      auto_play_audio_mode_off: "Не воспроизводить автоматически",
+      auto_play_audio_mode_word: "Автовоспроизведение только для одного слова",
+      auto_play_audio_mode_all: "Автовоспроизведение для слова и предложения",
     },
     fi: {
       input_language: "Syottokieli",
@@ -274,7 +300,11 @@
       shortcut_label: "Pikanappain",
       shortcut_placeholder: "Paina pikanappainta",
       shortcut_hint: "Valitse tama kentta ja paina nappainta tai nappainyhdistelmaa, esimerkiksi: Shift, Alt+1, Ctrl+Shift+L.",
-      auto_play_audio: "toista audio automaattisesti",
+      hide_home_settings_button: "Piilota asetuspainike etusivulla",
+      auto_play_audio_title: "Toista audio automaattisesti",
+      auto_play_audio_mode_off: "Ei automaattista toistoa",
+      auto_play_audio_mode_word: "Toista automaattisesti vain yhdelle sanalle",
+      auto_play_audio_mode_all: "Toista automaattisesti sanalle ja lauseelle",
     },
     de: {
       input_language: "Eingabesprache",
@@ -285,7 +315,11 @@
       shortcut_label: "Kurzbefehl",
       shortcut_placeholder: "Kurzbefehl drucken",
       shortcut_hint: "Wahlen Sie dieses Feld und drucken Sie eine Taste oder Tastenkombination, z. B.: Shift, Alt+1, Ctrl+Shift+L.",
-      auto_play_audio: "Audio automatisch abspielen",
+      hide_home_settings_button: "Settings-Button auf Home ausblenden",
+      auto_play_audio_title: "Audio automatisch abspielen",
+      auto_play_audio_mode_off: "Nicht automatisch abspielen",
+      auto_play_audio_mode_word: "Nur bei einem einzelnen Wort automatisch abspielen",
+      auto_play_audio_mode_all: "Bei Wort und Satz automatisch abspielen",
     },
     fr: {
       input_language: "Langue source",
@@ -297,7 +331,11 @@
       shortcut_placeholder: "Appuyez sur le raccourci",
       shortcut_hint:
         "Selectionnez ce champ puis appuyez sur une touche ou combinaison, par exemple: Shift, Alt+1, Ctrl+Shift+L.",
-      auto_play_audio: "lecture audio automatique",
+      hide_home_settings_button: "Masquer le bouton des reglages sur l'accueil",
+      auto_play_audio_title: "Lecture audio automatique",
+      auto_play_audio_mode_off: "Ne pas lire automatiquement",
+      auto_play_audio_mode_word: "Lire automatiquement uniquement pour un mot",
+      auto_play_audio_mode_all: "Lire automatiquement pour mot et phrase",
     },
   };
   const RESOURCE_TIMEOUT_SECONDS = {
@@ -420,6 +458,10 @@
 
   function getWordCount(text) {
     return text ? text.split(/\s+/).filter(Boolean).length : 0;
+  }
+
+  function isSingleWordText(text) {
+    return getWordCount(String(text || "").trim()) === 1;
   }
 
   function registerActiveHtmlAudio(audio) {
@@ -1715,26 +1757,34 @@
   }
 
   function maybeAutoPlayAudio(data) {
-    if (!data || !settingsState.popover.auto_play_audio || !toolSettings.enable_audio) {
+    if (!data || !toolSettings.enable_audio) {
       return;
     }
 
-    if (data.type === "lookup") {
-      playAudio(
-        String(data.audio_url || ""),
-        String(data.word || ""),
-        String(data.audio_lang || settingsState.languages.source_language || "")
-      );
+    const autoPlayMode = normalizeAutoPlayAudioMode(settingsState.popover.auto_play_audio_mode);
+    if (autoPlayMode === DEFAULT_AUTO_PLAY_AUDIO_MODE) {
       return;
     }
 
-    if (data.type === "translate") {
-      playAudio(
-        String(data.audio_url || ""),
-        String(data.original || ""),
-        String(data.audio_lang || settingsState.languages.source_language || "")
-      );
+    const dataType = String(data.type || "");
+    if (dataType !== "lookup" && dataType !== "translate") {
+      return;
     }
+
+    const sourceText =
+      dataType === "lookup"
+        ? String(data.word || "")
+        : String(data.original || "");
+
+    if (autoPlayMode === "word" && !isSingleWordText(sourceText)) {
+      return;
+    }
+
+    playAudio(
+      String(data.audio_url || ""),
+      sourceText,
+      String(data.audio_lang || settingsState.languages.source_language || "")
+    );
   }
 
   function renderMeanings(meanings) {
@@ -2104,13 +2154,18 @@
     const incomingLanguages = data.languages || {};
     const incomingSettings = data.settings || {};
     const nowTs = Date.now();
+    const previousTargetLanguage = settingsState.languages.target_language;
 
     const incomingState = {
       source_language: String(incomingLanguages.source_language || "auto"),
       target_language: String(incomingLanguages.target_language || "vi"),
       trigger_mode: incomingSettings.popover_trigger_mode === "shortcut" ? "shortcut" : "auto",
       shortcut_combo: normalizeShortcutCombo(incomingSettings.popover_shortcut || DEFAULT_SHORTCUT_COMBO),
-      auto_play_audio: Boolean(incomingSettings.auto_play_audio),
+      auto_play_audio_mode: normalizeAutoPlayAudioMode(
+        incomingSettings.auto_play_audio_mode,
+        incomingSettings.auto_play_audio
+      ),
+      hide_home_settings_button: Boolean(incomingSettings.hide_home_settings_button),
       panel_open_mode: normalizePanelOpenMode(incomingSettings.popover_open_panel_mode),
       definition_language_mode: normalizeDefinitionLanguageMode(incomingSettings.popover_definition_language_mode),
     };
@@ -2123,8 +2178,10 @@
         incomingState.trigger_mode +
         " shortcut=" +
         incomingState.shortcut_combo +
-        " autoPlay=" +
-        String(incomingState.auto_play_audio) +
+        " autoPlayMode=" +
+        incomingState.auto_play_audio_mode +
+        " hideSettingsButton=" +
+        String(incomingState.hide_home_settings_button) +
         " panelMode=" +
         incomingState.panel_open_mode +
         " definitionMode=" +
@@ -2137,7 +2194,8 @@
         incomingState.target_language !== settingsSaveGuardSnapshot.target_language ||
         incomingState.trigger_mode !== settingsSaveGuardSnapshot.trigger_mode ||
         incomingState.shortcut_combo !== settingsSaveGuardSnapshot.shortcut_combo ||
-        incomingState.auto_play_audio !== settingsSaveGuardSnapshot.auto_play_audio ||
+        incomingState.auto_play_audio_mode !== settingsSaveGuardSnapshot.auto_play_audio_mode ||
+        incomingState.hide_home_settings_button !== settingsSaveGuardSnapshot.hide_home_settings_button ||
         incomingState.panel_open_mode !== settingsSaveGuardSnapshot.panel_open_mode ||
         incomingState.definition_language_mode !== settingsSaveGuardSnapshot.definition_language_mode;
 
@@ -2159,7 +2217,8 @@
     settingsState.popover = {
       trigger_mode: incomingState.trigger_mode,
       shortcut_combo: incomingState.shortcut_combo,
-      auto_play_audio: incomingState.auto_play_audio,
+      auto_play_audio_mode: incomingState.auto_play_audio_mode,
+      hide_home_settings_button: incomingState.hide_home_settings_button,
       panel_open_mode: incomingState.panel_open_mode,
       definition_language_mode: incomingState.definition_language_mode,
     };
@@ -2179,11 +2238,17 @@
     };
 
     settingsLoaded = true;
+    applySettingsTriggerVisibility();
+
+    const shouldRebuildSettingsModal =
+      previousTargetLanguage !== settingsState.languages.target_language;
 
     if (settingsModalEl && !settingsModalEl.classList.contains("apl-settings-root--hidden")) {
-      renderSettingsModal();
+      if (shouldRebuildSettingsModal) {
+        renderSettingsModal();
+      }
       syncSettingsFormIfOpen();
-    } else if (settingsModalEl) {
+    } else if (settingsModalEl && shouldRebuildSettingsModal) {
       renderSettingsModal();
     }
   }
@@ -2216,8 +2281,10 @@
         settingsState.popover.trigger_mode +
         " shortcut=" +
         settingsState.popover.shortcut_combo +
-        " autoPlay=" +
-        String(Boolean(settingsState.popover.auto_play_audio)) +
+        " autoPlayMode=" +
+        settingsState.popover.auto_play_audio_mode +
+        " hideSettingsButton=" +
+        String(settingsState.popover.hide_home_settings_button) +
         " panelMode=" +
         settingsState.popover.panel_open_mode +
         " definitionMode=" +
@@ -2228,7 +2295,11 @@
         enable_lookup: toolSettings.enable_lookup,
         enable_translate: toolSettings.enable_translate,
         enable_audio: toolSettings.enable_audio,
-        auto_play_audio: settingsState.popover.auto_play_audio,
+        auto_play_audio_mode: settingsState.popover.auto_play_audio_mode,
+        auto_play_audio:
+          normalizeAutoPlayAudioMode(settingsState.popover.auto_play_audio_mode) !==
+          DEFAULT_AUTO_PLAY_AUDIO_MODE,
+        hide_home_settings_button: settingsState.popover.hide_home_settings_button,
         popover_trigger_mode: settingsState.popover.trigger_mode,
         popover_shortcut: settingsState.popover.shortcut_combo,
         popover_open_panel_mode: settingsState.popover.panel_open_mode,
@@ -2260,6 +2331,13 @@
     if (!settingsTriggerEl) {
       return;
     }
+
+    if (settingsState.popover.hide_home_settings_button) {
+      settingsTriggerEl.style.display = "none";
+      return;
+    }
+
+    settingsTriggerEl.style.display = "";
     settingsTriggerEl.classList.remove("apl-settings-trigger--hidden");
   }
 
@@ -2267,7 +2345,32 @@
     if (!settingsTriggerEl) {
       return;
     }
+
+    if (settingsState.popover.hide_home_settings_button) {
+      settingsTriggerEl.style.display = "none";
+      return;
+    }
+
     settingsTriggerEl.classList.add("apl-settings-trigger--hidden");
+  }
+
+  function applySettingsTriggerVisibility() {
+    if (!settingsTriggerEl) {
+      return;
+    }
+
+    if (settingsState.popover.hide_home_settings_button) {
+      settingsTriggerEl.style.display = "none";
+      return;
+    }
+
+    settingsTriggerEl.style.display = "";
+    if (!settingsTriggerBootVisibleDone) {
+      runSettingsTriggerStartupVisibility();
+      return;
+    }
+
+    showSettingsTrigger();
   }
 
   function isPointerInSettingsHotzone(clientX, clientY) {
@@ -2282,6 +2385,11 @@
   }
 
   function handleSettingsTriggerPointerMove(event) {
+    if (settingsState.popover.hide_home_settings_button) {
+      hideSettingsTrigger();
+      return;
+    }
+
     if (!settingsTriggerBootVisibleDone) {
       return;
     }
@@ -2304,6 +2412,11 @@
   }
 
   function runSettingsTriggerStartupVisibility() {
+    if (settingsState.popover.hide_home_settings_button) {
+      hideSettingsTrigger();
+      return;
+    }
+
     showSettingsTrigger();
 
     if (settingsTriggerBootVisibleDone) {
@@ -2367,6 +2480,7 @@
         existing[i].remove();
       }
       runSettingsTriggerStartupVisibility();
+      applySettingsTriggerVisibility();
       return;
     }
 
@@ -2383,6 +2497,7 @@
     document.body.appendChild(trigger);
     settingsTriggerEl = trigger;
     runSettingsTriggerStartupVisibility();
+    applySettingsTriggerVisibility();
   }
 
   function resourceLabel(resourceId) {
@@ -2524,6 +2639,36 @@
 
   function triggerModeChecked(mode) {
     return settingsState.popover.trigger_mode === mode ? " checked" : "";
+  }
+
+  function normalizeAutoPlayAudioMode(value, legacyAutoPlayValue) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "word" || normalized === "all") {
+      return normalized;
+    }
+    if (normalized === "off") {
+      return DEFAULT_AUTO_PLAY_AUDIO_MODE;
+    }
+
+    if (typeof legacyAutoPlayValue === "boolean") {
+      return legacyAutoPlayValue ? "all" : DEFAULT_AUTO_PLAY_AUDIO_MODE;
+    }
+
+    if (legacyAutoPlayValue !== null && typeof legacyAutoPlayValue !== "undefined") {
+      const legacyAsText = String(legacyAutoPlayValue).trim().toLowerCase();
+      if (legacyAsText === "1" || legacyAsText === "true" || legacyAsText === "yes" || legacyAsText === "on") {
+        return "all";
+      }
+      if (legacyAsText === "0" || legacyAsText === "false" || legacyAsText === "no" || legacyAsText === "off") {
+        return DEFAULT_AUTO_PLAY_AUDIO_MODE;
+      }
+    }
+
+    return DEFAULT_AUTO_PLAY_AUDIO_MODE;
+  }
+
+  function autoPlayAudioModeChecked(mode) {
+    return normalizeAutoPlayAudioMode(settingsState.popover.auto_play_audio_mode) === mode ? " checked" : "";
   }
 
   function normalizePanelOpenMode(value) {
@@ -2745,10 +2890,33 @@
       "</div>" +
       "</div>" +
       '<div class="apl-settings-section">' +
-      '<label class="apl-settings-toggle"><input class="apl-settings-auto-play-audio" type="checkbox"' +
-      (settingsState.popover.auto_play_audio ? " checked" : "") +
+      '<div class="apl-settings-section-title">' +
+      escapeHtml(uiCopy.auto_play_audio_title) +
+      "</div>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-auto-play-audio-mode" type="radio" name="apl-auto-play-audio-mode" value="off"' +
+      autoPlayAudioModeChecked("off") +
+      '"><span class="apl-settings-radio-label">' +
+      escapeHtml(uiCopy.auto_play_audio_mode_off) +
+      "</span>" +
+      "</label>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-auto-play-audio-mode" type="radio" name="apl-auto-play-audio-mode" value="word"' +
+      autoPlayAudioModeChecked("word") +
+      '"><span class="apl-settings-radio-label">' +
+      escapeHtml(uiCopy.auto_play_audio_mode_word) +
+      "</span>" +
+      "</label>" +
+      '<label class="apl-settings-radio"><input class="apl-settings-auto-play-audio-mode" type="radio" name="apl-auto-play-audio-mode" value="all"' +
+      autoPlayAudioModeChecked("all") +
+      '"><span class="apl-settings-radio-label">' +
+      escapeHtml(uiCopy.auto_play_audio_mode_all) +
+      "</span>" +
+      "</label>" +
+      "</div>" +
+      '<div class="apl-settings-section">' +
+      '<label class="apl-settings-toggle"><input class="apl-settings-hide-home-settings-button" type="checkbox"' +
+      (settingsState.popover.hide_home_settings_button ? " checked" : "") +
       '"> ' +
-      escapeHtml(uiCopy.auto_play_audio) +
+      escapeHtml(uiCopy.hide_home_settings_button) +
       "</label>" +
       "</div>" +
       errorHtml +
@@ -2842,11 +3010,16 @@
     const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
     const triggerModeInput = settingsModalEl.querySelector(".apl-settings-trigger-mode:checked");
     const panelModeInput = settingsModalEl.querySelector(".apl-settings-panel-open-mode:checked");
+    const autoPlayAudioModeInput = settingsModalEl.querySelector(
+      ".apl-settings-auto-play-audio-mode:checked"
+    );
     const definitionLanguageModeInput = settingsModalEl.querySelector(
       ".apl-settings-definition-language-mode:checked"
     );
+    const hideHomeSettingsButtonInput = settingsModalEl.querySelector(
+      ".apl-settings-hide-home-settings-button"
+    );
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
-    const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
 
     const sourceLanguage = sourceSelect ? String(sourceSelect.value || "auto") : settingsState.languages.source_language;
     const targetLanguage = targetSelect ? String(targetSelect.value || "vi") : settingsState.languages.target_language;
@@ -2858,14 +3031,20 @@
       ? normalizeDefinitionLanguageMode(definitionLanguageModeInput.value)
       : normalizeDefinitionLanguageMode(settingsState.popover.definition_language_mode);
     const shortcutCombo = normalizeShortcutCombo(shortcutInput ? shortcutInput.value : settingsState.popover.shortcut_combo);
-    const autoPlayAudio = Boolean(autoPlayInput && autoPlayInput.checked);
+    const autoPlayAudioMode = autoPlayAudioModeInput
+      ? normalizeAutoPlayAudioMode(autoPlayAudioModeInput.value)
+      : normalizeAutoPlayAudioMode(settingsState.popover.auto_play_audio_mode);
+    const hideHomeSettingsButton = hideHomeSettingsButtonInput
+      ? Boolean(hideHomeSettingsButtonInput.checked)
+      : Boolean(settingsState.popover.hide_home_settings_button);
 
     return {
       source_language: sourceLanguage,
       target_language: targetLanguage,
       trigger_mode: triggerMode === "shortcut" ? "shortcut" : "auto",
       shortcut_combo: shortcutCombo,
-      auto_play_audio: autoPlayAudio,
+      auto_play_audio_mode: autoPlayAudioMode,
+      hide_home_settings_button: hideHomeSettingsButton,
       panel_open_mode: panelOpenMode,
       definition_language_mode: definitionLanguageMode,
     };
@@ -2876,7 +3055,8 @@
     settingsState.languages.target_language = nextValues.target_language;
     settingsState.popover.trigger_mode = nextValues.trigger_mode;
     settingsState.popover.shortcut_combo = nextValues.shortcut_combo;
-    settingsState.popover.auto_play_audio = nextValues.auto_play_audio;
+    settingsState.popover.auto_play_audio_mode = normalizeAutoPlayAudioMode(nextValues.auto_play_audio_mode);
+    settingsState.popover.hide_home_settings_button = Boolean(nextValues.hide_home_settings_button);
     settingsState.popover.panel_open_mode = normalizePanelOpenMode(nextValues.panel_open_mode);
     settingsState.popover.definition_language_mode = normalizeDefinitionLanguageMode(
       nextValues.definition_language_mode
@@ -2891,7 +3071,12 @@
     const sourceSelect = settingsModalEl.querySelector(".apl-settings-source-language");
     const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
     const shortcutInput = settingsModalEl.querySelector(".apl-settings-shortcut-input");
-    const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
+    const hideHomeSettingsButtonInput = settingsModalEl.querySelector(
+      ".apl-settings-hide-home-settings-button"
+    );
+    const autoPlayAudioModeInputs = settingsModalEl.querySelectorAll(
+      ".apl-settings-auto-play-audio-mode"
+    );
     const panelModeInputs = settingsModalEl.querySelectorAll(".apl-settings-panel-open-mode");
     const definitionLanguageModeInputs = settingsModalEl.querySelectorAll(
       ".apl-settings-definition-language-mode"
@@ -2913,14 +3098,13 @@
       shortcutInput.value = settingsState.popover.shortcut_combo;
       shortcutInput.disabled = settingsState.popover.trigger_mode !== "shortcut";
     }
-    if (autoPlayInput) {
-      autoPlayInput.checked = settingsState.popover.auto_play_audio;
-      pushDebug(
-        "syncSettingsFormIfOpen autoPlay state=" +
-          String(settingsState.popover.auto_play_audio) +
-          " uiChecked=" +
-          String(Boolean(autoPlayInput.checked))
-      );
+    autoPlayAudioModeInputs.forEach(function (input) {
+      input.checked =
+        normalizeAutoPlayAudioMode(input.value) ===
+        normalizeAutoPlayAudioMode(settingsState.popover.auto_play_audio_mode);
+    });
+    if (hideHomeSettingsButtonInput) {
+      hideHomeSettingsButtonInput.checked = Boolean(settingsState.popover.hide_home_settings_button);
     }
     if (autoMode) {
       autoMode.checked = settingsState.popover.trigger_mode === "auto";
@@ -2945,7 +3129,12 @@
     const closeButton = settingsModalEl.querySelector(".apl-settings-close");
     const sourceSelect = settingsModalEl.querySelector(".apl-settings-source-language");
     const targetSelect = settingsModalEl.querySelector(".apl-settings-target-language");
-    const autoPlayInput = settingsModalEl.querySelector(".apl-settings-auto-play-audio");
+    const hideHomeSettingsButtonInput = settingsModalEl.querySelector(
+      ".apl-settings-hide-home-settings-button"
+    );
+    const autoPlayAudioModeInputs = settingsModalEl.querySelectorAll(
+      ".apl-settings-auto-play-audio-mode"
+    );
     const swapButton = settingsModalEl.querySelector(".apl-settings-swap-languages");
     const triggerModeInputs = settingsModalEl.querySelectorAll(".apl-settings-trigger-mode");
     const panelModeInputs = settingsModalEl.querySelectorAll(".apl-settings-panel-open-mode");
@@ -2957,12 +3146,14 @@
     function persistSettingsNow() {
       const values = readSettingsFormValues();
       applySettingsFormValues(values);
+      applySettingsTriggerVisibility();
       settingsSaveGuardSnapshot = {
         source_language: settingsState.languages.source_language,
         target_language: settingsState.languages.target_language,
         trigger_mode: settingsState.popover.trigger_mode,
         shortcut_combo: settingsState.popover.shortcut_combo,
-        auto_play_audio: settingsState.popover.auto_play_audio,
+        auto_play_audio_mode: settingsState.popover.auto_play_audio_mode,
+        hide_home_settings_button: settingsState.popover.hide_home_settings_button,
         panel_open_mode: settingsState.popover.panel_open_mode,
         definition_language_mode: settingsState.popover.definition_language_mode,
       };
@@ -3011,8 +3202,12 @@
       });
     }
 
-    if (autoPlayInput) {
-      autoPlayInput.addEventListener("change", persistSettingsNow);
+    autoPlayAudioModeInputs.forEach(function (input) {
+      input.addEventListener("change", persistSettingsNow);
+    });
+
+    if (hideHomeSettingsButtonInput) {
+      hideHomeSettingsButtonInput.addEventListener("change", persistSettingsNow);
     }
 
     triggerModeInputs.forEach(function (input) {
@@ -3027,8 +3222,8 @@
         pushDebug(
           "trigger_mode changed -> " +
             settingsState.popover.trigger_mode +
-            " keep autoPlay=" +
-            String(settingsState.popover.auto_play_audio)
+            " keep autoPlayMode=" +
+            settingsState.popover.auto_play_audio_mode
         );
         persistSettingsNow();
       });
@@ -3094,8 +3289,8 @@
     settingsModalEl.classList.remove("apl-settings-root--hidden");
     syncSettingsFormIfOpen();
     pushDebug(
-      "openSettingsModal autoPlay state=" +
-        String(settingsState.popover.auto_play_audio)
+      "openSettingsModal autoPlayMode=" +
+        settingsState.popover.auto_play_audio_mode
     );
 
     if (!settingsLoaded) {

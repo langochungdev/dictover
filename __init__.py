@@ -41,6 +41,8 @@ DEFAULT_RUNTIME_SETTINGS = {
     "enable_translate": True,
     "enable_audio": True,
     "auto_play_audio": False,
+    "auto_play_audio_mode": "off",
+    "hide_home_settings_button": False,
     "popover_trigger_mode": "auto",
     "popover_shortcut": "Shift",
     "popover_open_panel_mode": "none",
@@ -262,6 +264,19 @@ def _normalize_definition_language_mode(value: object) -> str:
     return "output"
 
 
+def _normalize_auto_play_audio_mode(value: object, legacy_auto_play: object | None = None) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {"word", "all"}:
+        return mode
+    if mode == "off":
+        return "off"
+
+    if legacy_auto_play is not None:
+        return "all" if _coerce_bool(legacy_auto_play, False) else "off"
+
+    return "off"
+
+
 def _coerce_bool(value: object, default: bool) -> bool:
     if value is None:
         return bool(default)
@@ -323,6 +338,11 @@ def _runtime_settings_from_config(config: dict) -> dict[str, object]:
             return config.get(key)
         return None
 
+    auto_play_audio_mode = _normalize_auto_play_audio_mode(
+        _get_value("auto_play_audio_mode"),
+        _get_value("auto_play_audio"),
+    )
+
     return {
         "enable_lookup": _coerce_bool(
             _get_value("enable_lookup"),
@@ -336,9 +356,11 @@ def _runtime_settings_from_config(config: dict) -> dict[str, object]:
             _get_value("enable_audio"),
             bool(DEFAULT_RUNTIME_SETTINGS["enable_audio"]),
         ),
-        "auto_play_audio": _coerce_bool(
-            _get_value("auto_play_audio"),
-            bool(DEFAULT_RUNTIME_SETTINGS["auto_play_audio"]),
+        "auto_play_audio": auto_play_audio_mode != "off",
+        "auto_play_audio_mode": auto_play_audio_mode,
+        "hide_home_settings_button": _coerce_bool(
+            _get_value("hide_home_settings_button"),
+            bool(DEFAULT_RUNTIME_SETTINGS["hide_home_settings_button"]),
         ),
         "popover_trigger_mode": _normalize_trigger_mode(
             _get_value("popover_trigger_mode")
@@ -370,9 +392,21 @@ def _runtime_settings_from_file_only() -> dict[str, object]:
 def _save_runtime_settings(partial_settings: dict[str, object]) -> dict[str, object]:
     merged = _runtime_settings_from_file_only()
 
-    for key in ["enable_lookup", "enable_translate", "enable_audio", "auto_play_audio"]:
+    for key in ["enable_lookup", "enable_translate", "enable_audio", "hide_home_settings_button"]:
         if key in partial_settings:
             merged[key] = _coerce_bool(partial_settings[key], bool(merged[key]))
+
+    if "auto_play_audio_mode" in partial_settings or "auto_play_audio" in partial_settings:
+        merged["auto_play_audio_mode"] = _normalize_auto_play_audio_mode(
+            partial_settings.get("auto_play_audio_mode"),
+            partial_settings.get("auto_play_audio"),
+        )
+
+    merged["auto_play_audio_mode"] = _normalize_auto_play_audio_mode(
+        merged.get("auto_play_audio_mode"),
+        merged.get("auto_play_audio"),
+    )
+    merged["auto_play_audio"] = merged["auto_play_audio_mode"] != "off"
 
     if "popover_trigger_mode" in partial_settings:
         merged["popover_trigger_mode"] = _normalize_trigger_mode(
@@ -1322,17 +1356,23 @@ def on_js_message(handled, message: str, context):
 
         persisted_payload = _build_settings_payload()
         persisted_settings = persisted_payload.get("settings", {}) if isinstance(persisted_payload, dict) else {}
-        persisted_auto = False
+        persisted_auto_play_mode = "off"
         if isinstance(persisted_settings, dict):
-            persisted_auto = bool(persisted_settings.get("auto_play_audio", False))
+            persisted_auto_play_mode = _normalize_auto_play_audio_mode(
+                persisted_settings.get("auto_play_audio_mode"),
+                persisted_settings.get("auto_play_audio"),
+            )
 
-        expected_auto = bool(saved_settings.get("auto_play_audio", False))
-        if persisted_auto != expected_auto:
+        expected_auto_play_mode = _normalize_auto_play_audio_mode(
+            saved_settings.get("auto_play_audio_mode"),
+            saved_settings.get("auto_play_audio"),
+        )
+        if persisted_auto_play_mode != expected_auto_play_mode:
             _send_to_webview(
                 context,
                 {
                     "type": "settings_error",
-                    "message": "Luu auto play khong khop voi gia tri mong doi. Vui long thu lai.",
+                    "message": "Luu auto play mode khong khop voi gia tri mong doi. Vui long thu lai.",
                 },
             )
 

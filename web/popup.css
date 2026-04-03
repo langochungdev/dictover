@@ -886,6 +886,13 @@
     overflow-wrap: normal;
 }
 
+.apl-settings-version {
+    color: #5a6c88;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
 .apl-settings-support-note {
     color: #445878;
     font-size: 12px;
@@ -1083,6 +1090,31 @@
     font-size: 12px;
 }
 
+.apl-settings-audio-home-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 8px 20px;
+}
+
+.apl-settings-audio-home-column {
+    min-width: 0;
+}
+
+.apl-settings-home-toggle-column {
+    min-width: 0;
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding-top: 26px;
+}
+
+.apl-settings-toggle--inline {
+    margin-bottom: 0;
+    justify-content: flex-start;
+    text-align: left;
+}
+
 @media (max-width: 560px) {
     .apl-settings-language-row {
         flex-direction: column;
@@ -1123,6 +1155,23 @@
     .apl-settings-panel-definition-column--right .apl-settings-radio {
         justify-content: flex-start;
     }
+
+    .apl-settings-audio-home-layout {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .apl-settings-home-toggle-column {
+        min-width: 0;
+        width: 100%;
+        padding-top: 0;
+        justify-content: flex-start;
+    }
+
+    .apl-settings-toggle--inline {
+        justify-content: flex-start;
+        text-align: left;
+    }
 }
 
 .apl-settings-toggle {
@@ -1146,6 +1195,38 @@
     pointer-events: auto !important;
     position: static !important;
     cursor: pointer;
+}
+
+.apl-settings-desktop-link {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: block;
+    width: 52px;
+    height: 52px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    text-decoration: none;
+    line-height: 0;
+    z-index: 2;
+}
+
+.apl-settings-desktop-icon {
+    width: 52px;
+    height: 52px;
+    object-fit: contain;
+    display: block;
+}
+
+@media (hover: hover) {
+    .apl-settings-desktop-link:hover,
+    .apl-settings-desktop-link:focus-visible {
+        opacity: 0.88;
+    }
 }
 
 .apl-settings-resource {

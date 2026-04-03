@@ -23,6 +23,23 @@ ADDON_WEB_ID = mw.addonManager.addonFromModule(__name__) or ADDON_MODULE
 ASSET_VERSION = "20260328i"
 ASSET_CSS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.css?v={ASSET_VERSION}"
 ASSET_JS_PATH = f"/_addons/{ADDON_WEB_ID}/web/popup.js?v={ASSET_VERSION}"
+ADDON_MANIFEST_PATH = ADDON_DIR / "manifest.json"
+
+
+def _read_addon_version() -> str:
+    try:
+        payload = json.loads(ADDON_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return "unknown"
+
+    if not isinstance(payload, dict):
+        return "unknown"
+
+    version = str(payload.get("version") or "").strip()
+    return version or "unknown"
+
+
+ADDON_VERSION = _read_addon_version()
 
 if str(ADDON_DIR) not in sys.path:
     sys.path.insert(0, str(ADDON_DIR))
@@ -130,6 +147,7 @@ def _send_install_ping_once(marker_payload: dict[str, object]) -> None:
         "event": "install",
         "addon_module": ADDON_MODULE,
         "addon_web_id": str(ADDON_WEB_ID),
+        "version": ADDON_VERSION,
         "install_id": str(marker_payload.get("install_id", "")),
         "created_at": int(marker_payload.get("created_at", 0) or 0),
         "sent_at": int(time.time()),
@@ -435,6 +453,7 @@ def _build_settings_payload() -> dict:
 
     return {
         "type": "settings_state",
+        "addon_version": ADDON_VERSION,
         "settings": settings,
         "languages": translation,
         "resources": {
@@ -567,10 +586,12 @@ def on_card_show(html: str, card, context) -> str:
     css_tag = f"<link rel='stylesheet' href='{ASSET_CSS_PATH}'>"
     debug_flag = "true" if _is_debug_panel_always_visible() else "false"
     addon_web_id_json = json.dumps(str(ADDON_WEB_ID), ensure_ascii=False)
+    addon_version_json = json.dumps(str(ADDON_VERSION), ensure_ascii=False)
     context_flag_tag = (
         "<script>window.__aplIsDeckBrowser=false;"
         f"window.__aplDebugPanelAlwaysVisible={debug_flag};"
         f"window.__aplAddonWebId={addon_web_id_json};"
+        f"window.__aplAddonVersion={addon_version_json};"
         "</script>"
     )
     js_tag = f"<script src='{ASSET_JS_PATH}'></script>"
@@ -602,10 +623,12 @@ def on_webview_will_set_content(web_content, context) -> None:
     head_content = getattr(web_content, "head", None)
     debug_flag = "true" if _is_debug_panel_always_visible() else "false"
     addon_web_id_json = json.dumps(str(ADDON_WEB_ID), ensure_ascii=False)
+    addon_version_json = json.dumps(str(ADDON_VERSION), ensure_ascii=False)
     context_flag_tag = (
         "<script>window.__aplIsDeckBrowser=true;"
         f"window.__aplDebugPanelAlwaysVisible={debug_flag};"
         f"window.__aplAddonWebId={addon_web_id_json};"
+        f"window.__aplAddonVersion={addon_version_json};"
         "</script>"
     )
     if isinstance(head_content, str) and context_flag_tag not in head_content:

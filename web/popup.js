@@ -58,6 +58,7 @@
       mode: "api_only",
       status_unknown: false,
     },
+    addon_version: String(window.__aplAddonVersion || "").trim() || "unknown",
   };
 
   const resourceProgress = {
@@ -2169,6 +2170,9 @@
       panel_open_mode: normalizePanelOpenMode(incomingSettings.popover_open_panel_mode),
       definition_language_mode: normalizeDefinitionLanguageMode(incomingSettings.popover_definition_language_mode),
     };
+    const incomingAddonVersion = normalizeAddonVersion(
+      data.addon_version || settingsState.addon_version || window.__aplAddonVersion
+    );
     pushDebug(
       "settings_state recv src=" +
         incomingState.source_language +
@@ -2231,6 +2235,7 @@
       source_language: incomingState.source_language,
       target_language: incomingState.target_language,
     };
+    settingsState.addon_version = incomingAddonVersion;
 
     settingsState.resources = {
       mode: "api_only",
@@ -2671,6 +2676,11 @@
     return normalizeAutoPlayAudioMode(settingsState.popover.auto_play_audio_mode) === mode ? " checked" : "";
   }
 
+  function normalizeAddonVersion(value) {
+    const normalized = String(value || "").trim();
+    return normalized || "unknown";
+  }
+
   function normalizePanelOpenMode(value) {
     const normalized = String(value || "").trim().toLowerCase();
     if (normalized === "details" || normalized === "images") {
@@ -2765,6 +2775,8 @@
     const panelCopy = getPanelModeUiCopy();
     const definitionCopy = getDefinitionModeUiCopy();
     const avatarUrl = escapeHtml(getAddonAssetUrl("assets/avt-cat.jpg"));
+    const desktopIconUrl = escapeHtml(getAddonAssetUrl("assets/dictover-desktop.png"));
+    const addonVersion = escapeHtml(normalizeAddonVersion(settingsState.addon_version));
 
     const errorHtml = settingsMessage
       ? '<div class="apl-settings-error">' + escapeHtml(settingsMessage) + "</div>"
@@ -2785,6 +2797,7 @@
       "</a>" +
       '<div class="apl-settings-brand-meta">' +
       '<a class="apl-settings-site-link" href="https://langochung.me" target="_blank" rel="noopener noreferrer">langochung.me</a>' +
+      '<span class="apl-settings-version">DictOver v' + addonVersion + "</span>" +
       '<span class="apl-settings-support-note">&lt;- báo lỗi và yêu cầu feature qua chatbox icon con mèo</span>' +
       "</div>" +
       "</div>" +
@@ -2890,6 +2903,8 @@
       "</div>" +
       "</div>" +
       '<div class="apl-settings-section">' +
+      '<div class="apl-settings-audio-home-layout">' +
+      '<div class="apl-settings-audio-home-column">' +
       '<div class="apl-settings-section-title">' +
       escapeHtml(uiCopy.auto_play_audio_title) +
       "</div>" +
@@ -2912,14 +2927,21 @@
       "</span>" +
       "</label>" +
       "</div>" +
-      '<div class="apl-settings-section">' +
-      '<label class="apl-settings-toggle"><input class="apl-settings-hide-home-settings-button" type="checkbox"' +
+      '<div class="apl-settings-home-toggle-column">' +
+      '<label class="apl-settings-toggle apl-settings-toggle--inline"><input class="apl-settings-hide-home-settings-button" type="checkbox"' +
       (settingsState.popover.hide_home_settings_button ? " checked" : "") +
       '"> ' +
       escapeHtml(uiCopy.hide_home_settings_button) +
       "</label>" +
       "</div>" +
+      "</div>" +
+      "</div>" +
       errorHtml +
+      '<a class="apl-settings-desktop-link" href="https://dictover.langochung.me" target="_blank" rel="noopener noreferrer" aria-label="Open DictOver Desktop">' +
+      '<img class="apl-settings-desktop-icon" src="' +
+      desktopIconUrl +
+      '" alt="DictOver Desktop" />' +
+      "</a>" +
       "</div>" +
       "</div>";
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -17,9 +18,12 @@ WIKITEXT_LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
 WIKITEXT_FORMATTING_PATTERN = re.compile(r"'{2,}")
 AUDIO_TEMPLATE_PATTERN = re.compile(r"\{\{\s*audio\s*\|([^}]*)\}\}", re.IGNORECASE)
 MEDIA_FILENAME_PATTERN = re.compile(r"([^|{}]+\.(?:ogg|oga|mp3|wav))", re.IGNORECASE)
+REQUEST_RETRY_COUNT = 2
+REQUEST_RETRY_DELAY_SECONDS = 0.3
 LANGUAGE_TO_WIKTIONARY_KEY = {
     "en": "en",
     "zh-CN": "zh",
+    "zh-TW": "zh",
     "ja": "ja",
     "ko": "ko",
     "ru": "ru",
@@ -31,6 +35,7 @@ LANGUAGE_TO_WIKTIONARY_KEY = {
 LANGUAGE_TO_WIKTIONARY_DOMAIN = {
     "en": "en",
     "zh-CN": "zh",
+    "zh-TW": "zh",
     "ja": "ja",
     "ko": "ko",
     "ru": "ru",
@@ -48,9 +53,21 @@ def _normalize_source_language(source_language: str) -> str:
 
 def _request_json(url: str, timeout: int) -> object:
     request = Request(url, headers={"User-Agent": "anki-popup-lookup/1.0"})
-    with urlopen(request, timeout=timeout) as response:
-        payload = response.read().decode("utf-8")
-    return json.loads(payload)
+    last_error: Exception | None = None
+    for attempt in range(REQUEST_RETRY_COUNT + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                payload = response.read().decode("utf-8")
+            return json.loads(payload)
+        except HTTPError:
+            raise
+        except (URLError, TimeoutError, OSError) as error:
+            last_error = error
+            if attempt >= REQUEST_RETRY_COUNT:
+                break
+            time.sleep(REQUEST_RETRY_DELAY_SECONDS * (attempt + 1))
+
+    raise URLError(str(last_error or "request failed"))
 
 
 def _clean_text(value: str) -> str:
@@ -76,7 +93,9 @@ def _fetch_dictionaryapi(word: str, timeout: int) -> list[dict]:
     return parsed
 
 
-def _resolve_wiktionary_entries(parsed: dict, source_language: str, allow_cross_language: bool) -> list[dict]:
+def _resolve_wiktionary_entries(
+    parsed: dict, source_language: str, allow_cross_language: bool
+) -> list[dict]:
     preferred_key = LANGUAGE_TO_WIKTIONARY_KEY.get(source_language, "en")
     if isinstance(parsed.get(preferred_key), list) and parsed[preferred_key]:
         return parsed[preferred_key]
@@ -122,7 +141,9 @@ def _build_wikimedia_audio_url(file_name: str) -> str:
     if not cleaned:
         return ""
     normalized_name = cleaned.replace(" ", "_")
-    return f"https://commons.wikimedia.org/wiki/Special:FilePath/{quote(normalized_name)}"
+    return (
+        f"https://commons.wikimedia.org/wiki/Special:FilePath/{quote(normalized_name)}"
+    )
 
 
 def _extract_audio_url_from_wikitext(wikitext: str) -> str:
@@ -193,7 +214,9 @@ def _extract_wiktionary_wikitext(payload: dict) -> str:
     return str(first_revision.get("*") or "")
 
 
-def _fetch_wiktionary_action(word: str, source_language: str, timeout: int) -> list[dict]:
+def _fetch_wiktionary_action(
+    word: str, source_language: str, timeout: int
+) -> list[dict]:
     domain = LANGUAGE_TO_WIKTIONARY_DOMAIN.get(source_language, "en")
     url = (
         f"{WIKTIONARY_ACTION_ENDPOINT.format(domain=domain)}"
@@ -226,7 +249,9 @@ def _fetch_wiktionary_action(word: str, source_language: str, timeout: int) -> l
 
         if line.startswith("=") and line.endswith("="):
             if current_definitions:
-                meanings.append({"partOfSpeech": current_pos, "definitions": current_definitions})
+                meanings.append(
+                    {"partOfSpeech": current_pos, "definitions": current_definitions}
+                )
                 current_definitions = []
 
             heading = _clean_wikitext_line(line.strip("= "))
@@ -245,7 +270,9 @@ def _fetch_wiktionary_action(word: str, source_language: str, timeout: int) -> l
         current_definitions.append({"definition": definition_text, "example": ""})
 
     if current_definitions:
-        meanings.append({"partOfSpeech": current_pos, "definitions": current_definitions})
+        meanings.append(
+            {"partOfSpeech": current_pos, "definitions": current_definitions}
+        )
 
     meanings = [item for item in meanings if item.get("definitions")]
     if not meanings:
@@ -283,7 +310,9 @@ def _fetch_wiktionary(word: str, source_language: str, timeout: int) -> list[dic
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        part_of_speech = str(entry.get("partOfSpeech") or "").strip().lower() or "unknown"
+        part_of_speech = (
+            str(entry.get("partOfSpeech") or "").strip().lower() or "unknown"
+        )
         raw_definitions = entry.get("definitions")
         if not isinstance(raw_definitions, list):
             continue
@@ -304,7 +333,9 @@ def _fetch_wiktionary(word: str, source_language: str, timeout: int) -> list[dic
             definitions.append({"definition": definition_text, "example": example_text})
 
         if definitions:
-            meanings.append({"partOfSpeech": part_of_speech, "definitions": definitions})
+            meanings.append(
+                {"partOfSpeech": part_of_speech, "definitions": definitions}
+            )
 
     if not meanings:
         raise LookupError("Word not found")
@@ -313,7 +344,9 @@ def _fetch_wiktionary(word: str, source_language: str, timeout: int) -> list[dic
     return [{"word": word, "phonetics": phonetics, "meanings": meanings}]
 
 
-def fetch_definition(word: str, source_language: str = "en", timeout: int = 5) -> list[dict]:
+def fetch_definition(
+    word: str, source_language: str = "en", timeout: int = 5
+) -> list[dict]:
     normalized = (word or "").strip()
     if not normalized:
         raise LookupError("Missing word")
@@ -328,7 +361,9 @@ def fetch_definition(word: str, source_language: str = "en", timeout: int = 5) -
                 return rest_data
 
             try:
-                action_data = _fetch_wiktionary_action(normalized, resolved_source, timeout)
+                action_data = _fetch_wiktionary_action(
+                    normalized, resolved_source, timeout
+                )
             except (LookupError, RuntimeError):
                 return rest_data
 
@@ -356,7 +391,9 @@ def fetch_definition(word: str, source_language: str = "en", timeout: int = 5) -
                 return rest_data
 
             try:
-                action_data = _fetch_wiktionary_action(normalized, resolved_source, timeout)
+                action_data = _fetch_wiktionary_action(
+                    normalized, resolved_source, timeout
+                )
             except (LookupError, RuntimeError):
                 return rest_data
 

@@ -22,6 +22,7 @@ SUPPORTED_SOURCE_LANGUAGES = {
     "auto",
     "en",
     "zh-CN",
+    "zh-TW",
     "ja",
     "ko",
     "ru",
@@ -34,6 +35,7 @@ SUPPORTED_SOURCE_LANGUAGES = {
 SUPPORTED_TARGET_LANGUAGES = {
     "en",
     "zh-CN",
+    "zh-TW",
     "ja",
     "ko",
     "ru",
@@ -42,16 +44,25 @@ SUPPORTED_TARGET_LANGUAGES = {
     "fr",
     "vi",
 }
+TRANSLATE_INPUT_MAX_LENGTH = 2000
 
 
 def _normalize_source_language(value: object) -> str:
     code = str(value or "").strip()
-    return code if code in SUPPORTED_SOURCE_LANGUAGES else str(DEFAULT_CONFIG["source_language"])
+    return (
+        code
+        if code in SUPPORTED_SOURCE_LANGUAGES
+        else str(DEFAULT_CONFIG["source_language"])
+    )
 
 
 def _normalize_target_language(value: object) -> str:
     code = str(value or "").strip()
-    return code if code in SUPPORTED_TARGET_LANGUAGES else str(DEFAULT_CONFIG["target_language"])
+    return (
+        code
+        if code in SUPPORTED_TARGET_LANGUAGES
+        else str(DEFAULT_CONFIG["target_language"])
+    )
 
 
 def _load_config() -> dict[str, object]:
@@ -66,10 +77,14 @@ def _load_config() -> dict[str, object]:
             merged.update(
                 {
                     "source_language": str(
-                        config_data.get("source_language", DEFAULT_CONFIG["source_language"])
+                        config_data.get(
+                            "source_language", DEFAULT_CONFIG["source_language"]
+                        )
                     ),
                     "target_language": str(
-                        config_data.get("target_language", DEFAULT_CONFIG["target_language"])
+                        config_data.get(
+                            "target_language", DEFAULT_CONFIG["target_language"]
+                        )
                     ),
                 }
             )
@@ -84,6 +99,8 @@ def handle_translate(phrase: str) -> dict[str, str]:
     original = (phrase or "").strip()
     if not original:
         return {"type": "error", "message": "Khong co doan van de dich."}
+    if len(original) > TRANSLATE_INPUT_MAX_LENGTH:
+        return {"type": "error", "message": "Doan van qua dai de dich."}
 
     config = _load_config()
     source_language = _normalize_source_language(config.get("source_language"))
@@ -93,12 +110,11 @@ def handle_translate(phrase: str) -> dict[str, str]:
     if source_language == "auto":
         try:
             detected = translation_service.detect_language(original)
-            if detected.lower().startswith("zh"):
-                tts_language = "zh-CN"
-            elif detected in {"en", "ja", "ko", "ru", "fi", "de", "fr", "vi"}:
-                tts_language = detected
-            else:
-                tts_language = "en"
+            tts_language = translation_service.normalize_detected_language(
+                detected,
+                sample_text=original,
+                default_language="en",
+            )
         except Exception:
             tts_language = "en"
 

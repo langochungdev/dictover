@@ -189,15 +189,16 @@
     },
   };
   const SUPPORTED_LANGUAGES = [
+    { code: "vi", label: "Vietnamese" },
     { code: "en", label: "English" },
-    { code: "zh-CN", label: "Chinese" },
+    { code: "zh-CN", label: "Chinese (Simplified)" },
+    { code: "zh-TW", label: "Chinese (Traditional)" },
     { code: "ja", label: "Japanese" },
     { code: "ko", label: "Korean" },
     { code: "ru", label: "Russian" },
     { code: "fi", label: "Finnish" },
     { code: "de", label: "German" },
     { code: "fr", label: "French" },
-    { code: "vi", label: "Vietnamese" },
   ];
   const AUTO_DETECT_LANGUAGE = { code: "auto", label: "Auto Detect" };
   const SETTINGS_UI_COPY = {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -32,11 +33,36 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "popover_definition_language_mode": "output",
 }
 
-SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh-CN", "ja", "ko", "ru", "fi", "de", "fr", "vi"}
-SUPPORTED_TARGET_LANGUAGES = {"en", "zh-CN", "ja", "ko", "ru", "fi", "de", "fr", "vi"}
+SUPPORTED_SOURCE_LANGUAGES = {
+    "auto",
+    "en",
+    "zh-CN",
+    "zh-TW",
+    "ja",
+    "ko",
+    "ru",
+    "fi",
+    "de",
+    "fr",
+    "vi",
+}
+SUPPORTED_TARGET_LANGUAGES = {
+    "en",
+    "zh-CN",
+    "zh-TW",
+    "ja",
+    "ko",
+    "ru",
+    "fi",
+    "de",
+    "fr",
+    "vi",
+}
 SUPPORTED_DEFINITION_LANGUAGE_MODES = {"output", "input", "english"}
 DEFINITION_TRANSLATION_CACHE_MAX = 512
+LOOKUP_INPUT_MAX_LENGTH = 200
 _definition_translation_cache: dict[tuple[str, str, str], str] = {}
+_definition_translation_cache_lock = threading.Lock()
 
 
 def _normalize_source_language(value: object) -> str:
@@ -47,15 +73,6 @@ def _normalize_source_language(value: object) -> str:
 def _normalize_target_language(value: object) -> str:
     code = str(value or "").strip()
     return code if code in SUPPORTED_TARGET_LANGUAGES else "vi"
-
-
-def _normalize_detected_language(value: str) -> str:
-    detected = str(value or "").strip()
-    if detected.lower().startswith("zh"):
-        return "zh-CN"
-    if detected in {"en", "ja", "ko", "ru", "fi", "de", "fr", "vi"}:
-        return detected
-    return "en"
 
 
 def _normalize_definition_language_mode(value: object) -> str:
@@ -86,7 +103,9 @@ def _first_definition_text(meanings: object) -> str:
         return ""
 
     first_meaning = meanings[0] if isinstance(meanings[0], dict) else {}
-    definitions = first_meaning.get("definitions", []) if isinstance(first_meaning, dict) else []
+    definitions = (
+        first_meaning.get("definitions", []) if isinstance(first_meaning, dict) else []
+    )
     if not isinstance(definitions, list) or not definitions:
         return ""
 
@@ -94,7 +113,9 @@ def _first_definition_text(meanings: object) -> str:
     return str(first_definition.get("definition") or "").strip()
 
 
-def _translate_definition_cached(text: str, source_language: str, target_language: str) -> str:
+def _translate_definition_cached(
+    text: str, source_language: str, target_language: str
+) -> str:
     normalized_text = str(text or "").strip()
     if not normalized_text:
         return ""
@@ -103,7 +124,8 @@ def _translate_definition_cached(text: str, source_language: str, target_languag
         return normalized_text
 
     cache_key = (source_language, target_language, normalized_text)
-    cached = _definition_translation_cache.get(cache_key)
+    with _definition_translation_cache_lock:
+        cached = _definition_translation_cache.get(cache_key)
     if cached:
         return cached
 
@@ -113,19 +135,22 @@ def _translate_definition_cached(text: str, source_language: str, target_languag
         target_language,
     ).strip()
 
-    if len(_definition_translation_cache) >= DEFINITION_TRANSLATION_CACHE_MAX:
-        oldest_key = next(iter(_definition_translation_cache), None)
-        if oldest_key is not None:
-            _definition_translation_cache.pop(oldest_key, None)
+    with _definition_translation_cache_lock:
+        if len(_definition_translation_cache) >= DEFINITION_TRANSLATION_CACHE_MAX:
+            oldest_key = next(iter(_definition_translation_cache), None)
+            if oldest_key is not None:
+                _definition_translation_cache.pop(oldest_key, None)
 
-    _definition_translation_cache[cache_key] = translated or normalized_text
-    return _definition_translation_cache[cache_key]
+        _definition_translation_cache[cache_key] = translated or normalized_text
+        return _definition_translation_cache[cache_key]
 
 
 def handle_lookup(word: str) -> dict[str, Any]:
     normalized = (word or "").strip()
     if not normalized:
         return {"type": "error", "message": "Khong co tu de tra."}
+    if len(normalized) > LOOKUP_INPUT_MAX_LENGTH:
+        return {"type": "error", "message": "Tu can tra qua dai."}
 
     config = _load_config()
     source_language = _normalize_source_language(config.get("source_language"))
@@ -138,13 +163,21 @@ def handle_lookup(word: str) -> dict[str, Any]:
     if source_language == "auto":
         try:
             detected_language = translation_service.detect_language(normalized)
-            lookup_language = _normalize_detected_language(detected_language)
+            lookup_language = translation_service.normalize_detected_language(
+                detected_language,
+                sample_text=normalized,
+                default_language="en",
+            )
         except Exception:
             lookup_language = "en"
 
     try:
-        raw_data = dictionary_api.fetch_definition(normalized, source_language=lookup_language)
-        parsed = parse_response(raw_data, max_definitions=int(config["max_definitions"]))
+        raw_data = dictionary_api.fetch_definition(
+            normalized, source_language=lookup_language
+        )
+        parsed = parse_response(
+            raw_data, max_definitions=int(config["max_definitions"])
+        )
 
         if not bool(config.get("show_example", True)):
             for meaning in parsed.get("meanings", []):
@@ -155,7 +188,9 @@ def handle_lookup(word: str) -> dict[str, Any]:
             return {"type": "error", "message": "Khong tim thay tu nay."}
 
         try:
-            translated = translation_service.translate_text(normalized, lookup_language, target_language)
+            translated = translation_service.translate_text(
+                normalized, lookup_language, target_language
+            )
         except Exception:
             translated = "Khong the dich nghia luc nay."
 
@@ -179,7 +214,9 @@ def handle_lookup(word: str) -> dict[str, Any]:
 
         audio_url = str(parsed.get("audio_url") or "").strip()
         if not audio_url:
-            audio_url = tts_service.build_google_tts_url(parsed.get("word") or normalized, lookup_language)
+            audio_url = tts_service.build_google_tts_url(
+                parsed.get("word") or normalized, lookup_language
+            )
 
         return {
             "type": "lookup",

@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/OWNER/REPO/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/OWNER/REPO/releases/tag/v0.1.0
 
+## v0.6.0 (2026-04-04)
+
+### Feat
+
+- add support for Traditional Chinese and enhance language detection logic
+- add docs directory to .gitignore
+- add auto play audio mode and hide home settings button options
+
 ## v0.5.0 (2026-03-29)
 
 ### Feat
